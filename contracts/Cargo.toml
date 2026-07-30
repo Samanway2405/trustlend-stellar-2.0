@@ -13,6 +13,7 @@ members = [
     "tlend_vesting",
     "tlend_airdrop",
     "pooled_lending",
+    "borrower_loyalty",
 ]
 resolver = "2"
 

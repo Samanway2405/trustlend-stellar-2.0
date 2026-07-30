@@ -2,9 +2,35 @@
 #![allow(clippy::too_many_arguments)]
 use soroban_sdk::token;
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN,
-    Env, Vec,
+    contract, contractclient, contractimpl, contracttype, symbol_short, vec, Address, Bytes,
+    BytesN, Env, IntoVal, Symbol, Val, Vec,
 };
+
+struct LoyaltyClient(Address);
+impl LoyaltyClient {
+    fn new(_env: &Env, address: &Address) -> Self {
+        Self(address.clone())
+    }
+    fn distribute_reward(
+        &self,
+        env: &Env,
+        caller: &Address,
+        borrower: &Address,
+        loan_amount: &i128,
+        duration_days: &u32,
+        reputation_tier: &u32,
+    ) -> i128 {
+        let args: Vec<Val> = vec![
+            env,
+            caller.into_val(env),
+            borrower.into_val(env),
+            (*loan_amount).into_val(env),
+            (*duration_days).into_val(env),
+            (*reputation_tier).into_val(env),
+        ];
+        env.invoke_contract::<i128>(&self.0, &Symbol::new(env, "distribute_reward"), args)
+    }
+}
 
 #[contractclient(name = "FlashLoanReceiverClient")]
 pub trait FlashLoanReceiver {
@@ -77,6 +103,8 @@ pub struct LoanRequestInput {
     pub collateral_entries: Vec<CollateralEntry>,
     /// Interest rate model: Fixed or Floating
     pub rate_model: InterestRateModel,
+    /// Borrower reputation tier (0=None, 1=Beginner, 2=Silver, 3=Gold, 4=Platinum)
+    pub reputation_tier: u32,
 }
 
 #[contracttype]
@@ -168,6 +196,10 @@ pub enum DataKey {
     OraclePriceSamples(Address),
     /// TWAP fallback price for a collateral asset.
     OracleTwapPrice(Address),
+    /// Borrower Loyalty Rewards contract address
+    LoyaltyContract,
+    /// Reputation tier per loan (0=None, 1=Beginner, ..., 4=Platinum)
+    LoanReputationTier(u32),
 }
 
 /// Default platform fee = 1 % of interest (100 bps) until governance changes it.
@@ -403,6 +435,23 @@ impl LendingContract {
             .expect("Multisig admin not configured")
     }
 
+    /// Set the Borrower Loyalty Rewards contract address (admin only).
+    pub fn set_loyalty_contract(env: Env, admin: Address, loyalty: Address) {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::LoyaltyContract, &loyalty);
+        env.events().publish(
+            (symbol_short!("lending"), symbol_short!("loyalty")),
+            loyalty,
+        );
+    }
+
+    pub fn get_loyalty_contract(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::LoyaltyContract)
+    }
+
     /// Whitelist a new collateral asset ("adding pools"). Multisig-gated —
     /// see `set_multisig_admin`.
     pub fn whitelist_asset(env: Env, caller: Address, asset: Address) {
@@ -491,7 +540,9 @@ impl LendingContract {
         if uncollected <= 0 {
             return 0;
         }
-        env.storage().instance().set(&DataKey::UncollectedFees, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::UncollectedFees, &0i128);
         env.events().publish(
             (symbol_short!("fees"), symbol_short!("collected")),
             (treasury_address, uncollected),
@@ -576,9 +627,7 @@ impl LendingContract {
     pub fn set_price_oracle(env: Env, caller: Address, oracle: Address) {
         caller.require_auth();
         Self::assert_multisig_admin(&env, &caller);
-        env.storage()
-            .instance()
-            .set(&DataKey::PriceOracle, &oracle);
+        env.storage().instance().set(&DataKey::PriceOracle, &oracle);
         env.events()
             .publish((symbol_short!("oracle"), symbol_short!("set")), oracle);
     }
@@ -675,8 +724,7 @@ impl LendingContract {
         // Clamp collateral factor to safe bounds
         let clamped_factor = config
             .collateral_factor_bps
-            .max(MIN_COLLATERAL_FACTOR_BPS)
-            .min(MAX_COLLATERAL_FACTOR_BPS);
+            .clamp(MIN_COLLATERAL_FACTOR_BPS, MAX_COLLATERAL_FACTOR_BPS);
 
         let clamped_volatility = config.volatility_bps.min(10_000); // max 100%
 
@@ -769,9 +817,7 @@ impl LendingContract {
             });
         }
 
-        env.storage()
-            .persistent()
-            .set(&key, &new_entries);
+        env.storage().persistent().set(&key, &new_entries);
 
         env.events().publish(
             (symbol_short!("collat"), symbol_short!("deposit")),
@@ -834,10 +880,7 @@ impl LendingContract {
 
         // Check borrowing power constraint: after withdrawal, borrowing power
         // must still cover all active loans.
-        let borrowing_power = Self::compute_borrowing_power_from_entries(
-            &env,
-            &new_entries,
-        );
+        let borrowing_power = Self::compute_borrowing_power_from_entries(&env, &new_entries);
         let total_active_debt: i128 = Self::get_total_active_debt_of_borrower(&env, &borrower);
 
         if borrowing_power < total_active_debt {
@@ -851,9 +894,7 @@ impl LendingContract {
         if new_entries.is_empty() {
             env.storage().persistent().remove(&key);
         } else {
-            env.storage()
-                .persistent()
-                .set(&key, &new_entries);
+            env.storage().persistent().set(&key, &new_entries);
         }
 
         env.events().publish(
@@ -916,11 +957,7 @@ impl LendingContract {
     ///
     /// The function checks that the borrower has sufficient borrowing power
     /// (from multi-asset collateral) to cover the requested loan amount.
-    pub fn create_loan_request(
-        env: Env,
-        borrower: Address,
-        request: LoanRequestInput,
-    ) -> u32 {
+    pub fn create_loan_request(env: Env, borrower: Address, request: LoanRequestInput) -> u32 {
         borrower.require_auth();
         Self::assert_not_paused(&env);
 
@@ -931,6 +968,7 @@ impl LendingContract {
             max_loan_amount,
             collateral_entries,
             rate_model,
+            reputation_tier,
         } = request;
 
         if amount <= 0 {
@@ -961,8 +999,7 @@ impl LendingContract {
         }
 
         // Check borrowing power: total borrowing power must be >= loan amount
-        let borrowing_power =
-            Self::compute_borrowing_power_from_entries(&env, &collateral_entries);
+        let borrowing_power = Self::compute_borrowing_power_from_entries(&env, &collateral_entries);
 
         if borrowing_power < amount {
             panic!(
@@ -1021,9 +1058,10 @@ impl LendingContract {
         env.storage()
             .persistent()
             .set(&DataKey::Loan(loan_id), &loan);
+        env.storage().instance().set(&DataKey::LoanCount, &loan_id);
         env.storage()
-            .instance()
-            .set(&DataKey::LoanCount, &loan_id);
+            .persistent()
+            .set(&DataKey::LoanReputationTier(loan_id), &reputation_tier);
 
         let current_fees: i128 = env
             .storage()
@@ -1158,6 +1196,35 @@ impl LendingContract {
         if amount >= loan.remaining_due {
             loan.remaining_due = 0;
             loan.status = LoanStatus::Repaid;
+
+            // Distribute loyalty rewards if repaid on time
+            let now = env.ledger().timestamp();
+            if now <= loan.due_at {
+                if let Some(loyalty) = env
+                    .storage()
+                    .instance()
+                    .get::<DataKey, Address>(&DataKey::LoyaltyContract)
+                {
+                    let tier: u32 = env
+                        .storage()
+                        .persistent()
+                        .get(&DataKey::LoanReputationTier(loan_id))
+                        .unwrap_or(0);
+                    let duration_days = loan.duration_days;
+                    let loan_amount = loan.amount;
+                    let caller = env.current_contract_address();
+
+                    let client = LoyaltyClient::new(&env, &loyalty);
+                    let _reward = client.distribute_reward(
+                        &env,
+                        &caller,
+                        &loan.borrower,
+                        &loan_amount,
+                        &duration_days,
+                        &tier,
+                    );
+                }
+            }
         } else {
             loan.remaining_due -= amount;
         }
@@ -1454,7 +1521,7 @@ impl LendingContract {
                 .checked_mul(price)
                 .expect("Overflow computing entry value")
                 / PRICE_PRECISION; // normalize price
-            // Apply collateral factor
+                                   // Apply collateral factor
             let adjusted = value
                 .checked_mul(config.collateral_factor_bps as i128)
                 .expect("Overflow applying collateral factor")
@@ -1572,32 +1639,20 @@ impl LendingContract {
 
     fn store_borrower_loan_id(env: &Env, borrower: &Address, loan_id: u32) {
         let count_key = DataKey::BorrowerLoanCount(borrower.clone());
-        let count: u32 = env
-            .storage()
-            .persistent()
-            .get(&count_key)
-            .unwrap_or(0);
+        let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
         env.storage()
             .persistent()
             .set(&DataKey::BorrowerLoanAt(borrower.clone(), count), &loan_id);
-        env.storage()
-            .persistent()
-            .set(&count_key, &(count + 1));
+        env.storage().persistent().set(&count_key, &(count + 1));
     }
 
     fn push_loan_id_for_lender(env: &Env, lender: &Address, loan_id: u32) {
         let count_key = DataKey::LenderLoanCount(lender.clone());
-        let count: u32 = env
-            .storage()
-            .persistent()
-            .get(&count_key)
-            .unwrap_or(0);
+        let count: u32 = env.storage().persistent().get(&count_key).unwrap_or(0);
         env.storage()
             .persistent()
             .set(&DataKey::LenderLoanAt(lender.clone(), count), &loan_id);
-        env.storage()
-            .persistent()
-            .set(&count_key, &(count + 1));
+        env.storage().persistent().set(&count_key, &(count + 1));
     }
 
     fn assert_admin(env: &Env, caller: &Address) {
