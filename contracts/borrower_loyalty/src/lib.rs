@@ -55,6 +55,7 @@ impl BorrowerLoyaltyContract {
         lending_contract: Address,
         config: RewardConfig,
     ) {
+        admin.require_auth();
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("Contract already initialised");
         }
@@ -185,17 +186,14 @@ impl BorrowerLoyaltyContract {
         let token_client = token::Client::new(&env, &token_addr);
         let contract_balance = token_client.balance(&contract_addr);
 
-        if contract_balance >= reward {
-            token_client.transfer(&contract_addr, &borrower, &reward);
-        } else {
-            token_client.transfer(&contract_addr, &borrower, &contract_balance);
-        }
-
         let actual_transferred = if contract_balance >= reward {
             reward
         } else {
             contract_balance
         };
+        if actual_transferred <= 0 {
+            return 0;
+        }
 
         let prev_rewards: i128 = env
             .storage()
@@ -219,8 +217,10 @@ impl BorrowerLoyaltyContract {
 
         env.events().publish(
             (symbol_short!("loyalty"), symbol_short!("reward")),
-            (borrower, actual_transferred),
+            (borrower.clone(), actual_transferred),
         );
+
+        token_client.transfer(&contract_addr, &borrower, &actual_transferred);
 
         actual_transferred
     }
@@ -281,7 +281,7 @@ impl BorrowerLoyaltyContract {
             2 => config.tier_silver_multiplier_bps,
             3 => config.tier_gold_multiplier_bps,
             4 => config.tier_platinum_multiplier_bps,
-            _ => ONE_HUNDRED_PERCENT_BPS,
+            _ => panic!("Invalid reputation tier"),
         };
 
         config

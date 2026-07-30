@@ -28,7 +28,15 @@ impl LoyaltyClient {
             (*duration_days).into_val(env),
             (*reputation_tier).into_val(env),
         ];
-        env.invoke_contract::<i128>(&self.0, &Symbol::new(env, "distribute_reward"), args)
+        let result = env.try_invoke_contract::<i128, Val>(
+            &self.0,
+            &Symbol::new(env, "distribute_reward"),
+            args,
+        );
+        match result {
+            Ok(Ok(amount)) => amount,
+            _ => 0,
+        }
     }
 }
 
@@ -979,6 +987,9 @@ impl LendingContract {
         }
         if duration_days == 0 || duration_days > 365 {
             panic!("Duration must be between 1 and 365 days");
+        }
+        if reputation_tier > 4 {
+            panic!("Invalid reputation tier");
         }
         if collateral_entries.is_empty() {
             panic!("At least one collateral entry is required");
