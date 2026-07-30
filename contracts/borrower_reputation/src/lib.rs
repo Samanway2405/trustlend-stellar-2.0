@@ -91,6 +91,7 @@ pub enum DataKey {
     PauseSignerCount,
     UnpauseSigner(Address),
     UnpauseSignerCount,
+    ZkVerifier,
 }
 
 // ─── Oracle constants ───────────────────────────────────────────────────────────
@@ -435,6 +436,79 @@ impl BorrowerReputationContract {
             .persistent()
             .get(&DataKey::OracleData(borrower))
             .expect("No oracle data for borrower")
+    }
+
+    // ── ZK Credit Tier Upgrade ──────────────────────────────────────────────────
+
+    pub fn set_zk_verifier(env: Env, admin: Address, verifier: Address) {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+        env.storage().instance().set(&DataKey::ZkVerifier, &verifier);
+        env.events()
+            .publish((symbol_short!("zk_verif"), symbol_short!("set")), verifier);
+    }
+
+    pub fn get_zk_verifier(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::ZkVerifier)
+            .expect("ZK verifier not configured")
+    }
+
+    pub fn apply_zk_tier_upgrade(
+        env: Env,
+        caller: Address,
+        borrower: Address,
+        target_tier: u32,
+        nullifier: BytesN<32>,
+    ) {
+        caller.require_auth();
+        let is_admin = env.storage().instance().get::<DataKey, Address>(&DataKey::Admin).map(|a| a == caller).unwrap_or(false);
+        let is_zk_verifier = env.storage().instance().get::<DataKey, Address>(&DataKey::ZkVerifier).map(|v| v == caller).unwrap_or(false);
+        if !is_admin && !is_zk_verifier {
+            panic!("Unauthorised: caller is neither admin nor registered ZK verifier");
+        }
+
+        Self::assert_not_paused(&env);
+
+        let key = DataKey::BorrowerProfile(borrower.clone());
+        let mut profile: BorrowerProfile = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .expect("Profile not found");
+
+        if profile.is_frozen {
+            panic!("Cannot upgrade frozen account");
+        }
+
+        let new_tier = match target_tier {
+            1 => ReputationTier::Beginner,
+            2 => ReputationTier::Silver,
+            3 => ReputationTier::Gold,
+            4 => ReputationTier::Platinum,
+            _ => panic!("Invalid target tier"),
+        };
+
+        let min_score = match target_tier {
+            1 => 50,
+            2 => 150,
+            3 => 500,
+            4 => 1000,
+            _ => 0,
+        };
+
+        if profile.reputation_score < min_score {
+            profile.reputation_score = min_score;
+        }
+        profile.reputation_tier = new_tier;
+
+        env.storage().persistent().set(&key, &profile);
+
+        env.events().publish(
+            (symbol_short!("zk_tier"), symbol_short!("upgrade")),
+            (borrower, target_tier, nullifier),
+        );
     }
 
     // ── Mutations (admin-only for MVP) ────────────────────────────────────────
