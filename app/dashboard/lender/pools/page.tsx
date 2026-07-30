@@ -58,6 +58,7 @@ export default async function LenderPoolsPage() {
   const positions = positionsRes.data ?? [];
   const profile = profileRes.data;
   const txHistory = txHistoryRes.data ?? [];
+  const isKycVerified = profile?.kyc_status === "verified";
 
   const totalDeployed = positions.reduce(
     (s, p) => s + Number(p.principal_amount ?? 0),
@@ -458,6 +459,7 @@ export default async function LenderPoolsPage() {
             pools={pools}
             positions={positions}
             walletBalance={availableWalletBalance}
+            isKycVerified={isKycVerified}
           />
 
           {/* My positions detail */}
