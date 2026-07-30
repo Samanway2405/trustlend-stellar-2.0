@@ -204,6 +204,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "borrower-loyalty"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "borrower-reputation"
 version = "0.1.0"
 dependencies = [
@@ -820,6 +827,7 @@ dependencies = [
 name = "lending"
 version = "0.1.0"
 dependencies = [
+ "borrower-loyalty",
  "proptest",
  "soroban-sdk",
 ]

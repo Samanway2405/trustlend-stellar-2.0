@@ -423,6 +423,7 @@ export function WithdrawToFiatButton({ walletAddress }: WithdrawToFiatButtonProp
               </p>
             )}
           </div>
+          </FocusTrap>
         </div>
       )}
     </>

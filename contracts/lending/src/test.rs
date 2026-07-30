@@ -66,6 +66,7 @@ fn test_create_loan_request_basic() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     assert_eq!(loan_id, 1);
@@ -74,7 +75,10 @@ fn test_create_loan_request_basic() {
     assert_eq!(loan.amount, principal);
     assert_eq!(loan.duration_days, days);
     assert_eq!(loan.interest_rate_bps, rate_bps);
-    assert!(loan.total_due > principal, "total_due must exceed principal");
+    assert!(
+        loan.total_due > principal,
+        "total_due must exceed principal"
+    );
     assert_eq!(loan.remaining_due, loan.total_due);
     assert_eq!(loan.status, LoanStatus::Pending);
 }
@@ -106,6 +110,7 @@ fn test_interest_calculation_is_correct() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     let loan = client.get_loan(&loan_id);
@@ -140,6 +145,7 @@ fn test_create_loan_max_duration_365_days() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     let loan = client.get_loan(&loan_id);
@@ -168,6 +174,7 @@ fn test_create_loan_min_duration_1_day() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     let loan = client.get_loan(&loan_id);
@@ -215,6 +222,7 @@ fn test_no_overflow_at_maximum_valid_inputs() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     let loan = client.get_loan(&loan_id);
@@ -245,6 +253,7 @@ fn test_overflow_panics_with_near_max_principal() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -275,6 +284,7 @@ fn test_overflow_panics_at_second_multiplication() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -303,6 +313,7 @@ fn test_duration_zero_is_rejected() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -329,6 +340,7 @@ fn test_duration_366_is_rejected() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -355,6 +367,7 @@ fn test_zero_amount_is_rejected() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -382,6 +395,7 @@ fn test_amount_over_max_is_rejected() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -402,6 +416,7 @@ fn test_empty_collateral_entries_rejected() {
             max_loan_amount: 100_000_0000000,
             collateral_entries: Vec::new(&env),
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -429,6 +444,7 @@ fn test_non_whitelisted_collateral_asset_rejected() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 }
@@ -460,6 +476,7 @@ fn test_due_at_computed_correctly() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     let loan = client.get_loan(&loan_id);
@@ -495,6 +512,7 @@ fn test_platform_fee_is_one_percent_of_interest() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
     let loan = client.get_loan(&loan_id);
@@ -626,6 +644,7 @@ fn create_request_struct(
             },
         ],
         rate_model,
+        reputation_tier: 0,
     }
 }
 
@@ -1329,7 +1348,12 @@ fn test_flash_loan_success_full_repayment() {
     mint_tokens(&env, &token_address, &receiver_id, fee);
 
     let pool_before = token::Client::new(&env, &token_address).balance(&contract_id);
-    client.flash_loan(&receiver_id, &token_address, &loan_amount, &Bytes::new(&env));
+    client.flash_loan(
+        &receiver_id,
+        &token_address,
+        &loan_amount,
+        &Bytes::new(&env),
+    );
     let pool_after = token::Client::new(&env, &token_address).balance(&contract_id);
     assert_eq!(pool_after, pool_before + fee);
 }
@@ -1345,7 +1369,12 @@ fn test_flash_loan_accepts_overpayment() {
     mint_tokens(&env, &token_address, &receiver_id, fee + 100);
 
     let pool_before = token::Client::new(&env, &token_address).balance(&contract_id);
-    client.flash_loan(&receiver_id, &token_address, &loan_amount, &Bytes::new(&env));
+    client.flash_loan(
+        &receiver_id,
+        &token_address,
+        &loan_amount,
+        &Bytes::new(&env),
+    );
     let pool_after = token::Client::new(&env, &token_address).balance(&contract_id);
     assert_eq!(pool_after, pool_before + fee + 100);
 }
@@ -1363,7 +1392,12 @@ fn test_flash_loan_applies_custom_fee_bps() {
     mint_tokens(&env, &token_address, &receiver_id, expected_fee);
 
     let pool_before = token::Client::new(&env, &token_address).balance(&contract_id);
-    client.flash_loan(&receiver_id, &token_address, &loan_amount, &Bytes::new(&env));
+    client.flash_loan(
+        &receiver_id,
+        &token_address,
+        &loan_amount,
+        &Bytes::new(&env),
+    );
     let pool_after = token::Client::new(&env, &token_address).balance(&contract_id);
     assert_eq!(pool_after, pool_before + expected_fee);
 }
@@ -1375,7 +1409,12 @@ fn test_flash_loan_reverts_when_receiver_repays_nothing() {
     let client = LendingContractClient::new(&env, &contract_id);
 
     let receiver_id = env.register(stingy_receiver::StingyReceiver, ());
-    client.flash_loan(&receiver_id, &token_address, &1_000_0000000, &Bytes::new(&env));
+    client.flash_loan(
+        &receiver_id,
+        &token_address,
+        &1_000_0000000,
+        &Bytes::new(&env),
+    );
 }
 
 #[test]
@@ -1385,7 +1424,12 @@ fn test_flash_loan_reverts_on_partial_repayment() {
     let client = LendingContractClient::new(&env, &contract_id);
 
     let receiver_id = env.register(partial_receiver::PartialReceiver, ());
-    client.flash_loan(&receiver_id, &token_address, &1_000_0000000, &Bytes::new(&env));
+    client.flash_loan(
+        &receiver_id,
+        &token_address,
+        &1_000_0000000,
+        &Bytes::new(&env),
+    );
 }
 
 #[test]
@@ -1396,8 +1440,12 @@ fn test_failed_flash_loan_rolls_back_pool_balance() {
     let receiver_id = env.register(stingy_receiver::StingyReceiver, ());
     let pool_before = token::Client::new(&env, &token_address).balance(&contract_id);
 
-    let result =
-        client.try_flash_loan(&receiver_id, &token_address, &1_000_0000000, &Bytes::new(&env));
+    let result = client.try_flash_loan(
+        &receiver_id,
+        &token_address,
+        &1_000_0000000,
+        &Bytes::new(&env),
+    );
     assert!(result.is_err(), "flash_loan should have panicked");
 
     let pool_after = token::Client::new(&env, &token_address).balance(&contract_id);
@@ -1410,8 +1458,12 @@ fn test_pool_usable_again_immediately_after_a_failed_flash_loan() {
     let client = LendingContractClient::new(&env, &contract_id);
 
     let stingy_id = env.register(stingy_receiver::StingyReceiver, ());
-    let result =
-        client.try_flash_loan(&stingy_id, &token_address, &1_000_0000000, &Bytes::new(&env));
+    let result = client.try_flash_loan(
+        &stingy_id,
+        &token_address,
+        &1_000_0000000,
+        &Bytes::new(&env),
+    );
     assert!(result.is_err());
 
     let good_id = env.register(good_receiver::GoodReceiver, ());
@@ -1494,7 +1546,12 @@ fn test_flash_loan_fee_at_max_boundary_accepted() {
     mint_tokens(&env, &token_address, &receiver_id, expected_fee);
 
     let pool_before = token::Client::new(&env, &token_address).balance(&contract_id);
-    client.flash_loan(&receiver_id, &token_address, &loan_amount, &Bytes::new(&env));
+    client.flash_loan(
+        &receiver_id,
+        &token_address,
+        &loan_amount,
+        &Bytes::new(&env),
+    );
     let pool_after = token::Client::new(&env, &token_address).balance(&contract_id);
     assert_eq!(pool_after, pool_before + expected_fee);
 }
@@ -1671,7 +1728,10 @@ fn test_deposit_collateral_blocked_when_paused() {
     assert!(client.is_paused());
 
     let result = client.try_deposit_collateral(&borrower, &asset_a, &1_000_0000000);
-    assert!(result.is_err(), "deposit_collateral should have failed when paused");
+    assert!(
+        result.is_err(),
+        "deposit_collateral should have failed when paused"
+    );
 }
 
 /// Get borrowing power with no active loans allows full withdrawal.
@@ -1851,7 +1911,7 @@ fn test_get_asset_collateral_config_default() {
     let config = client.get_asset_collateral_config(&asset_a);
     // Default: 75% LTV, no oracle, 0 volatility
     assert_eq!(config.collateral_factor_bps, 7500);
-    assert_eq!(config.has_price_oracle, false);
+    assert!(!config.has_price_oracle);
     assert_eq!(config.volatility_bps, 0);
 }
 
@@ -1889,12 +1949,7 @@ fn test_price_oracle_median_resists_manipulation() {
     client.set_asset_oracle_prices(
         &admin,
         &asset_a,
-        &vec![
-            &env,
-            PRICE_PRECISION,
-            PRICE_PRECISION,
-            PRICE_PRECISION * 10,
-        ],
+        &vec![&env, PRICE_PRECISION, PRICE_PRECISION, PRICE_PRECISION * 10],
     );
 
     let value = client.get_total_collateral_value(&borrower);
@@ -1991,9 +2046,13 @@ fn test_create_loan_request_checks_borrowing_power() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
-    assert!(result.is_err(), "create_loan_request should have failed due to borrowing power");
+    assert!(
+        result.is_err(),
+        "create_loan_request should have failed due to borrowing power"
+    );
 }
 
 /// Create loan request with multiple collateral assets.
@@ -2038,6 +2097,7 @@ fn test_create_loan_request_with_multi_asset_collateral() {
                 },
             ],
             rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
         },
     );
 
@@ -2045,4 +2105,237 @@ fn test_create_loan_request_with_multi_asset_collateral() {
     assert_eq!(loan.status, LoanStatus::Pending);
 }
 
+// ─── Borrower Loyalty Rewards integration tests ───────────────────────────
 
+#[test]
+fn test_set_loyalty_contract() {
+    let (env, contract_id, admin, _borrower, _collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let loyalty = Address::generate(&env);
+    client.set_loyalty_contract(&admin, &loyalty);
+    let stored = client.get_loyalty_contract();
+    assert_eq!(stored, Some(loyalty));
+}
+
+#[test]
+fn test_set_loyalty_contract_non_admin_rejected() {
+    let (env, contract_id, _admin, _borrower, _collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let loyalty = Address::generate(&env);
+    let stranger = Address::generate(&env);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.set_loyalty_contract(&stranger, &loyalty);
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_repayment_without_loyalty_contract_works() {
+    let (env, contract_id, admin, borrower, collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let lender = Address::generate(&env);
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &create_request_struct(
+            &env,
+            1_000_0000000,
+            30,
+            1500,
+            100_000_0000000,
+            &collateral_asset,
+            100_000_0000000,
+            InterestRateModel::Fixed,
+        ),
+    );
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    let loan = client.get_loan(&loan_id);
+    let status = client.record_payment(&admin, &loan_id, &loan.total_due);
+    assert_eq!(status, LoanStatus::Repaid);
+}
+
+#[test]
+fn test_repayment_calls_loyalty_contract() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let lender = Address::generate(&env);
+    let collateral_asset = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_multisig_admin(&admin, &admin);
+    client.whitelist_asset(&admin, &collateral_asset);
+
+    // Register and initialise loyalty contract
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let loyalty_id = env.register(borrower_loyalty::BorrowerLoyaltyContract, ());
+    let loyalty_client = borrower_loyalty::BorrowerLoyaltyContractClient::new(&env, &loyalty_id);
+
+    loyalty_client.initialize(
+        &admin,
+        &token_id,
+        &contract_id,
+        &borrower_loyalty::RewardConfig {
+            base_amount: 1_000_0000,
+            reference_loan_amount: 10_000_0000000,
+            max_duration_multiplier_bps: 10_000,
+            tier_none_multiplier_bps: 5_000,
+            tier_beginner_multiplier_bps: 10_000,
+            tier_silver_multiplier_bps: 15_000,
+            tier_gold_multiplier_bps: 20_000,
+            tier_platinum_multiplier_bps: 30_000,
+        },
+    );
+
+    // Fund the loyalty contract with tokens
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin_client.mint(&loyalty_id, &1_000_000_0000000);
+
+    // Link loyalty contract to lending contract
+    client.set_loyalty_contract(&admin, &loyalty_id);
+
+    // Create a Platinum-tier loan (reputation_tier = 4)
+    let loan_amount: i128 = 10_000_0000000;
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &LoanRequestInput {
+            amount: loan_amount,
+            duration_days: 30,
+            interest_rate_bps: 1000,
+            max_loan_amount: 100_000_0000000,
+            collateral_entries: vec![
+                &env,
+                CollateralEntry {
+                    asset: collateral_asset.clone(),
+                    amount: 100_000_0000000,
+                },
+            ],
+            rate_model: InterestRateModel::Fixed,
+            reputation_tier: 4, // Platinum
+        },
+    );
+
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    // Repay the loan in full on time
+    let loan = client.get_loan(&loan_id);
+    let status = client.record_payment(&admin, &loan_id, &loan.total_due);
+    assert_eq!(status, LoanStatus::Repaid);
+
+    // Check that rewards were distributed
+    let borrower_rewards = loyalty_client.get_borrower_rewards(&borrower);
+    assert!(
+        borrower_rewards > 0,
+        "Borrower should have received rewards"
+    );
+
+    let total = loyalty_client.get_total_rewards_distributed();
+    assert_eq!(total, borrower_rewards);
+
+    // Verify reward amount: Platinum tier, 10_000 XLM, 30 days
+    // base=1 TLEND, size=1.0x, duration=1.0x (max=1.0x), tier=3.0x
+    // expected = 1 * 1.0 * 1.0 * 3.0 = 3 TLEND
+    assert_eq!(
+        borrower_rewards, 3_000_0000,
+        "Platinum borrower should get 3 TLEND"
+    );
+}
+
+#[test]
+fn test_late_repayment_no_reward() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let lender = Address::generate(&env);
+    let collateral_asset = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_multisig_admin(&admin, &admin);
+    client.whitelist_asset(&admin, &collateral_asset);
+
+    // Register and initialise loyalty contract
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let loyalty_id = env.register(borrower_loyalty::BorrowerLoyaltyContract, ());
+    let loyalty_client = borrower_loyalty::BorrowerLoyaltyContractClient::new(&env, &loyalty_id);
+
+    loyalty_client.initialize(
+        &admin,
+        &token_id,
+        &contract_id,
+        &borrower_loyalty::RewardConfig {
+            base_amount: 1_000_0000,
+            reference_loan_amount: 10_000_0000000,
+            max_duration_multiplier_bps: 10_000,
+            tier_none_multiplier_bps: 5_000,
+            tier_beginner_multiplier_bps: 10_000,
+            tier_silver_multiplier_bps: 15_000,
+            tier_gold_multiplier_bps: 20_000,
+            tier_platinum_multiplier_bps: 30_000,
+        },
+    );
+
+    let token_admin_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin_client.mint(&loyalty_id, &1_000_000_0000000);
+
+    client.set_loyalty_contract(&admin, &loyalty_id);
+
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &LoanRequestInput {
+            amount: 10_000_0000000,
+            duration_days: 30,
+            interest_rate_bps: 1000,
+            max_loan_amount: 100_000_0000000,
+            collateral_entries: vec![
+                &env,
+                CollateralEntry {
+                    asset: collateral_asset.clone(),
+                    amount: 100_000_0000000,
+                },
+            ],
+            rate_model: InterestRateModel::Fixed,
+            reputation_tier: 4,
+        },
+    );
+
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    // Jump past due date (30 days = 30 * 86400 sec)
+    let loan = client.get_loan(&loan_id);
+    env.ledger().set_timestamp(loan.due_at + 1);
+
+    // Repay late
+    let loan = client.get_loan(&loan_id);
+    let status = client.record_payment(&admin, &loan_id, &loan.total_due);
+    assert_eq!(status, LoanStatus::Repaid);
+
+    // No rewards should be recorded
+    let borrower_rewards = loyalty_client.get_borrower_rewards(&borrower);
+    assert_eq!(
+        borrower_rewards, 0,
+        "Late repayment should receive no rewards"
+    );
+
+    let total = loyalty_client.get_total_rewards_distributed();
+    assert_eq!(total, 0);
+}

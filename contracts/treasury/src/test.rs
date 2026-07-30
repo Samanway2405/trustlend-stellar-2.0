@@ -1,12 +1,11 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Env,
-};
+use soroban_sdk::{testutils::Address as _, token, vec, Address, Env};
 
-use lending::{LendingContract, LendingContractClient};
+use lending::{
+    CollateralEntry, InterestRateModel, LendingContract, LendingContractClient, LoanRequestInput,
+};
 
 fn setup_test() -> (
     Env,
@@ -24,7 +23,9 @@ fn setup_test() -> (
     let dao_treasury = Address::generate(&env);
 
     let token_admin = Address::generate(&env);
-    let asset_token_id = env.register_stellar_asset_contract_v2(token_admin).address();
+    let asset_token_id = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
 
     let treasury_id = env.register(TreasuryContract, ());
     let client = TreasuryContractClient::new(&env, &treasury_id);
@@ -111,8 +112,14 @@ fn test_distribute_fees_50_50_split() {
     assert_eq!(ins_payout, 500_0000000i128);
     assert_eq!(dao_payout, 500_0000000i128);
 
-    assert_eq!(token::Client::new(&env, &asset_token).balance(&insurance_fund), 500_0000000i128);
-    assert_eq!(token::Client::new(&env, &asset_token).balance(&dao_treasury), 500_0000000i128);
+    assert_eq!(
+        token::Client::new(&env, &asset_token).balance(&insurance_fund),
+        500_0000000i128
+    );
+    assert_eq!(
+        token::Client::new(&env, &asset_token).balance(&dao_treasury),
+        500_0000000i128
+    );
     assert_eq!(client.get_treasury_balance(&asset_token), 0);
 
     assert_eq!(client.get_total_distributed_insurance(), 500_0000000i128);
@@ -153,13 +160,21 @@ fn test_collect_protocol_fees_from_lending() {
     // Create loan request (accrues platform fee)
     let _loan_id = lending.create_loan_request(
         &borrower,
-        &1_000_0000000i128,
-        &30u32,
-        &1000u32,
-        &100_000_0000000i128,
-        &collateral_asset,
-        &100_000_0000000i128,
-        &lending::InterestRateModel::Fixed,
+        &LoanRequestInput {
+            amount: 1_000_0000000,
+            duration_days: 30,
+            interest_rate_bps: 1000,
+            max_loan_amount: 100_000_0000000,
+            collateral_entries: vec![
+                &env,
+                CollateralEntry {
+                    asset: collateral_asset.clone(),
+                    amount: 100_000_0000000,
+                },
+            ],
+            rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
+        },
     );
 
     let uncollected = lending.get_uncollected_fees();

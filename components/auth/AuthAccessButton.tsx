@@ -325,6 +325,7 @@ export function AuthAccessButton({ className, buttonLabel = "Sign in" }: AuthAcc
             </p>
             {message ? <p className="auth-error">{message}</p> : null}
           </div>
+          </FocusTrap>
         </div>
       ) : null}
     </>
