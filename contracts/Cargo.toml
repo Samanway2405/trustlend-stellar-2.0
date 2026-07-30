@@ -14,6 +14,7 @@ members = [
     "tlend_airdrop",
     "pooled_lending",
     "borrower_loyalty",
+    "zk_credit_verifier",
 ]
 resolver = "2"
 
