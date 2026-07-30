@@ -1585,7 +1585,7 @@ impl LendingContract {
         }
 
         let midpoint = len / 2;
-        let even = len % 2 == 0;
+        let even = len.is_multiple_of(2);
         let mut lower = 0i128;
 
         for step in 0..=midpoint {
@@ -1594,7 +1594,9 @@ impl LendingContract {
 
             let mut idx: u32 = 1;
             while idx < remaining.len() {
-                let value = remaining.get(idx).expect("No oracle price samples available");
+                let value = remaining
+                    .get(idx)
+                    .expect("No oracle price samples available");
                 if value < min_value {
                     min_value = value;
                     min_idx = idx;

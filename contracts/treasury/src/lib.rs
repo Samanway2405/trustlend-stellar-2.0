@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env, IntoVal, Symbol,
-    Vec,
+    contract, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env, IntoVal,
+    Symbol, Vec,
 };
 
 #[cfg(test)]
@@ -69,14 +69,30 @@ impl TreasuryContract {
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::InsuranceFund, &insurance_fund);
-        env.storage().instance().set(&DataKey::DaoTreasury, &dao_treasury);
-        env.storage().instance().set(&DataKey::InsuranceShareBps, &insurance_share_bps);
-        env.storage().instance().set(&DataKey::DaoShareBps, &dao_share_bps);
-        env.storage().instance().set(&DataKey::TotalCollectedFees, &0i128);
-        env.storage().instance().set(&DataKey::TotalDistributedInsurance, &0i128);
-        env.storage().instance().set(&DataKey::TotalDistributedDao, &0i128);
-        env.storage().instance().set(&DataKey::DistributionCount, &0u32);
+        env.storage()
+            .instance()
+            .set(&DataKey::InsuranceFund, &insurance_fund);
+        env.storage()
+            .instance()
+            .set(&DataKey::DaoTreasury, &dao_treasury);
+        env.storage()
+            .instance()
+            .set(&DataKey::InsuranceShareBps, &insurance_share_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::DaoShareBps, &dao_share_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalCollectedFees, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDistributedInsurance, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDistributedDao, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::DistributionCount, &0u32);
     }
 
     /// Upgrade the contract's code while preserving its storage.
@@ -103,8 +119,12 @@ impl TreasuryContract {
             panic!("Distribution share BPS must equal 10,000 (100%)");
         }
 
-        env.storage().instance().set(&DataKey::InsuranceShareBps, &insurance_share_bps);
-        env.storage().instance().set(&DataKey::DaoShareBps, &dao_share_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::InsuranceShareBps, &insurance_share_bps);
+        env.storage()
+            .instance()
+            .set(&DataKey::DaoShareBps, &dao_share_bps);
     }
 
     /// Update Insurance Fund and DAO Treasury destination addresses (admin only).
@@ -117,16 +137,16 @@ impl TreasuryContract {
         caller.require_auth();
         Self::assert_admin(&env, &caller);
 
-        env.storage().instance().set(&DataKey::InsuranceFund, &insurance_fund);
-        env.storage().instance().set(&DataKey::DaoTreasury, &dao_treasury);
+        env.storage()
+            .instance()
+            .set(&DataKey::InsuranceFund, &insurance_fund);
+        env.storage()
+            .instance()
+            .set(&DataKey::DaoTreasury, &dao_treasury);
     }
 
     /// Collect accrued platform fees from lending contract into Treasury.
-    pub fn collect_protocol_fees(
-        env: Env,
-        caller: Address,
-        lending_contract: Address,
-    ) -> i128 {
+    pub fn collect_protocol_fees(env: Env, caller: Address, lending_contract: Address) -> i128 {
         caller.require_auth();
 
         let args = soroban_sdk::vec![
@@ -134,15 +154,14 @@ impl TreasuryContract {
             caller.into_val(&env),
             env.current_contract_address().into_val(&env),
         ];
-        let collected: i128 = env.invoke_contract(
-            &lending_contract,
-            &Symbol::new(&env, "collect_fees"),
-            args,
-        );
+        let collected: i128 =
+            env.invoke_contract(&lending_contract, &Symbol::new(&env, "collect_fees"), args);
 
         if collected > 0 {
             let total: i128 = Self::get_total_collected_fees(env.clone());
-            env.storage().instance().set(&DataKey::TotalCollectedFees, &(total + collected));
+            env.storage()
+                .instance()
+                .set(&DataKey::TotalCollectedFees, &(total + collected));
 
             env.events().publish(
                 (symbol_short!("treasury"), symbol_short!("collect")),
@@ -168,10 +187,15 @@ impl TreasuryContract {
         );
 
         let current_bal = Self::get_treasury_balance(env.clone(), asset_token.clone());
-        env.storage().persistent().set(&DataKey::TokenBalance(asset_token.clone()), &(current_bal + amount));
+        env.storage().persistent().set(
+            &DataKey::TokenBalance(asset_token.clone()),
+            &(current_bal + amount),
+        );
 
         let total = Self::get_total_collected_fees(env.clone());
-        env.storage().instance().set(&DataKey::TotalCollectedFees, &(total + amount));
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalCollectedFees, &(total + amount));
 
         env.events().publish(
             (symbol_short!("treasury"), symbol_short!("deposit")),
@@ -189,7 +213,8 @@ impl TreasuryContract {
         }
 
         let rules = Self::get_distribution_rules(env.clone());
-        let insurance_amount = (balance * (rules.insurance_share_bps as i128)) / (BPS_TOTAL as i128);
+        let insurance_amount =
+            (balance * (rules.insurance_share_bps as i128)) / (BPS_TOTAL as i128);
         let dao_amount = balance - insurance_amount;
 
         let insurance_fund = Self::get_insurance_fund(env.clone());
@@ -198,21 +223,36 @@ impl TreasuryContract {
         let client = token::Client::new(&env, &asset_token);
 
         if insurance_amount > 0 {
-            client.transfer(&env.current_contract_address(), &insurance_fund, &insurance_amount);
+            client.transfer(
+                &env.current_contract_address(),
+                &insurance_fund,
+                &insurance_amount,
+            );
         }
         if dao_amount > 0 {
             client.transfer(&env.current_contract_address(), &dao_treasury, &dao_amount);
         }
 
-        env.storage().persistent().set(&DataKey::TokenBalance(asset_token.clone()), &0i128);
+        env.storage()
+            .persistent()
+            .set(&DataKey::TokenBalance(asset_token.clone()), &0i128);
 
         let tot_ins = Self::get_total_distributed_insurance(env.clone());
-        env.storage().instance().set(&DataKey::TotalDistributedInsurance, &(tot_ins + insurance_amount));
+        env.storage().instance().set(
+            &DataKey::TotalDistributedInsurance,
+            &(tot_ins + insurance_amount),
+        );
 
         let tot_dao = Self::get_total_distributed_dao(env.clone());
-        env.storage().instance().set(&DataKey::TotalDistributedDao, &(tot_dao + dao_amount));
+        env.storage()
+            .instance()
+            .set(&DataKey::TotalDistributedDao, &(tot_dao + dao_amount));
 
-        let count: u32 = env.storage().instance().get(&DataKey::DistributionCount).unwrap_or(0);
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::DistributionCount)
+            .unwrap_or(0);
         let new_count = count + 1;
 
         let record = DistributionRecord {
@@ -223,8 +263,12 @@ impl TreasuryContract {
             dao_amount,
         };
 
-        env.storage().persistent().set(&DataKey::Distribution(new_count), &record);
-        env.storage().instance().set(&DataKey::DistributionCount, &new_count);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Distribution(new_count), &record);
+        env.storage()
+            .instance()
+            .set(&DataKey::DistributionCount, &new_count);
 
         env.events().publish(
             (symbol_short!("treasury"), symbol_short!("distrib")),
@@ -237,15 +281,24 @@ impl TreasuryContract {
     // ── Getters ──────────────────────────────────────────────────────────────
 
     pub fn get_admin(env: Env) -> Address {
-        env.storage().instance().get(&DataKey::Admin).expect("Treasury not initialised")
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Treasury not initialised")
     }
 
     pub fn get_insurance_fund(env: Env) -> Address {
-        env.storage().instance().get(&DataKey::InsuranceFund).expect("Treasury not initialised")
+        env.storage()
+            .instance()
+            .get(&DataKey::InsuranceFund)
+            .expect("Treasury not initialised")
     }
 
     pub fn get_dao_treasury(env: Env) -> Address {
-        env.storage().instance().get(&DataKey::DaoTreasury).expect("Treasury not initialised")
+        env.storage()
+            .instance()
+            .get(&DataKey::DaoTreasury)
+            .expect("Treasury not initialised")
     }
 
     pub fn get_distribution_rules(env: Env) -> DistributionRules {
@@ -274,19 +327,31 @@ impl TreasuryContract {
     }
 
     pub fn get_total_collected_fees(env: Env) -> i128 {
-        env.storage().instance().get(&DataKey::TotalCollectedFees).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalCollectedFees)
+            .unwrap_or(0)
     }
 
     pub fn get_total_distributed_insurance(env: Env) -> i128 {
-        env.storage().instance().get(&DataKey::TotalDistributedInsurance).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalDistributedInsurance)
+            .unwrap_or(0)
     }
 
     pub fn get_total_distributed_dao(env: Env) -> i128 {
-        env.storage().instance().get(&DataKey::TotalDistributedDao).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalDistributedDao)
+            .unwrap_or(0)
     }
 
     pub fn get_distribution_count(env: Env) -> u32 {
-        env.storage().instance().get(&DataKey::DistributionCount).unwrap_or(0)
+        env.storage()
+            .instance()
+            .get(&DataKey::DistributionCount)
+            .unwrap_or(0)
     }
 
     pub fn get_distribution(env: Env, index: u32) -> DistributionRecord {
@@ -300,7 +365,11 @@ impl TreasuryContract {
         let count = Self::get_distribution_count(env.clone());
         let mut list = Vec::new(&env);
         for i in 1..=count {
-            if let Some(record) = env.storage().persistent().get::<_, DistributionRecord>(&DataKey::Distribution(i)) {
+            if let Some(record) = env
+                .storage()
+                .persistent()
+                .get::<_, DistributionRecord>(&DataKey::Distribution(i))
+            {
                 list.push_back(record);
             }
         }

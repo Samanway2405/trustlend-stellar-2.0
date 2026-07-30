@@ -284,7 +284,8 @@ impl BorrowerLoyaltyContract {
             _ => ONE_HUNDRED_PERCENT_BPS,
         };
 
-        config.base_amount
+        config
+            .base_amount
             .checked_mul(size_multiplier_bps as i128)
             .expect("Overflow: base * size")
             .checked_mul(duration_multiplier_bps as i128)

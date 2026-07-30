@@ -1911,7 +1911,7 @@ fn test_get_asset_collateral_config_default() {
     let config = client.get_asset_collateral_config(&asset_a);
     // Default: 75% LTV, no oracle, 0 volatility
     assert_eq!(config.collateral_factor_bps, 7500);
-    assert_eq!(config.has_price_oracle, false);
+    assert!(!config.has_price_oracle);
     assert_eq!(config.volatility_bps, 0);
 }
 
@@ -1949,12 +1949,7 @@ fn test_price_oracle_median_resists_manipulation() {
     client.set_asset_oracle_prices(
         &admin,
         &asset_a,
-        &vec![
-            &env,
-            PRICE_PRECISION,
-            PRICE_PRECISION,
-            PRICE_PRECISION * 10,
-        ],
+        &vec![&env, PRICE_PRECISION, PRICE_PRECISION, PRICE_PRECISION * 10],
     );
 
     let value = client.get_total_collateral_value(&borrower);
