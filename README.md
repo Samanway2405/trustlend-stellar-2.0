@@ -394,6 +394,14 @@ curl -X POST https://your-app.vercel.app/api/cron/payment-due \
 
 ---
 
+## 👥 Contributors
+
+Thanks goes to these wonderful people who have contributed to TrustLend:
+
+<a href="https://github.com/thisisouvik/trustlend-stellar/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=thisisouvik/trustlend-stellar" alt="Contributors" />
+</a>
+
 ## 🤝 Contributing
 
 We love open-source contributors! Whether you're fixing bugs, improving documentation, or proposing new features, your help is welcome.
