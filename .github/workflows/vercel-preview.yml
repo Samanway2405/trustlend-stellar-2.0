@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
@@ -45,22 +46,26 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Environment Information
-        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        if: env.VERCEL_TOKEN != ''
+        run: vercel pull --yes --environment=preview --token=${{ env.VERCEL_TOKEN }}
 
       - name: Build Project Artifacts
-        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        if: env.VERCEL_TOKEN != ''
+        run: vercel build --token=${{ env.VERCEL_TOKEN }}
 
       - name: Deploy Preview to Vercel
         id: deploy
+        if: env.VERCEL_TOKEN != ''
         run: |
           {
             echo 'deploymentUrl<<EOF'
-            vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+            vercel deploy --prebuilt --token=${{ env.VERCEL_TOKEN }}
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Comment Preview URL on PR
         uses: actions/github-script@v7
+        if: env.VERCEL_TOKEN != ''
         with:
           script: |
             // Inlined from lib/deployment/parse-deployment-url.ts (cannot require .ts)
