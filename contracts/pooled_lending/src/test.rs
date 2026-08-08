@@ -554,7 +554,7 @@ fn test_supply_rate_never_exceeds_borrow_rate() {
 
     for util_pct in [0, 10, 25, 50, 75, 80, 85, 90, 95, 100] {
         let total_supply: i128 = 1_000_000_0000000;
-        let total_borrows: i128 = (total_supply as i128) * util_pct / 100;
+        let total_borrows: i128 = total_supply * util_pct / 100;
         client.update_pool_state(&admin, &pool_id, &total_supply, &total_borrows);
 
         let borrow_apy = client.get_borrow_apy(&pool_id);
@@ -577,7 +577,7 @@ fn test_borrow_rate_monotonically_increasing() {
     let mut prev_rate = 0u32;
     for util_pct in 0..=100 {
         let total_supply: i128 = 1_000_000_0000000;
-        let total_borrows: i128 = (total_supply as i128) * util_pct / 100;
+        let total_borrows: i128 = total_supply * util_pct / 100;
         client.update_pool_state(&admin, &pool_id, &total_supply, &total_borrows);
 
         let rate = client.get_borrow_apy(&pool_id);

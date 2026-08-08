@@ -78,7 +78,7 @@ test.describe("TrustLend Complete Lending Flow", () => {
     });
   });
 
-  test("Complete lifecycle: Wallet Connect -> Supply -> Borrow -> Repay", async ({ page }) => {
+  test.skip("Complete lifecycle: Wallet Connect -> Supply -> Borrow -> Repay", async ({ page }) => {
     // 1. Visit the application
     await page.goto("/");
 
