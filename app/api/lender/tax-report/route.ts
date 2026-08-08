@@ -147,15 +147,15 @@ export async function GET(request: Request) {
         y = 60;
       }
       
-      const pool = pos.lending_pools as any;
-      const poolName = pool?.name ?? "Unknown Pool";
+      const poolRaw = Array.isArray(pos.lending_pools) ? pos.lending_pools[0] : pos.lending_pools;
+      const poolName = (poolRaw as { name?: string })?.name ?? "Unknown Pool";
 
       doc
         .fillColor("#111827")
         .fontSize(10)
         .text(poolName, 50, y, { width: 150 })
-        .text(formatXlm(pos.principal_amount), 210, y, { width: 110 })
-        .text(formatXlm(pos.earned_interest), 330, y, { width: 110, align: "right" })
+        .text(formatXlm(pos.principal_amount as string | number), 210, y, { width: 110 })
+        .text(formatXlm(pos.earned_interest as string | number), 330, y, { width: 110, align: "right" })
         .text(String(pos.status), 450, y, { width: 80, align: "right" });
       y += 22;
     });

@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       amount: number;
       currency: string;
       anchorTxId: string;
-      instructions: any;
+      instructions: Record<string, unknown>;
       lenderAddress?: string;
     };
 

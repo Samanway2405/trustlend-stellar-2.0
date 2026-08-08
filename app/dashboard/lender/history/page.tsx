@@ -20,8 +20,8 @@ export default async function LenderHistoryPage() {
   // Fetch initial transactions with limit for server-side rendering
   const PAGE_SIZE = 20;
 
-  let userTxsQuery = supabase
-    ? supabase
+  const userTxsQuery = supabase
+    ? await supabase
         .from("ledger_transactions")
         .select("id, category, ref_type, ref_id, amount, currency, status, metadata, created_at")
         .eq("user_id", user.id)

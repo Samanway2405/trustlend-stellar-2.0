@@ -17,6 +17,7 @@ import {
   isIndexerConfigured,
   isIndexerRequired,
 } from "@/lib/indexer/read-model";
+import { formatCurrency } from "@/lib/utils/formatting";
 
 // ── Inline SVG illustrations ───────────────────────────────────────────────
 function EmptyLoansIllustration() {

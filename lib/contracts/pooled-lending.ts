@@ -105,7 +105,8 @@ export async function setPoolConfig(
     args: [
       addressToScVal(adminAddress),
       u32ToScVal(poolId),
-      encodePoolConfig(config),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      encodePoolConfig(config) as any,
     ],
     callerAddress: adminAddress,
   });
@@ -141,7 +142,8 @@ export async function initializePool(
     args: [
       addressToScVal(adminAddress),
       u32ToScVal(poolId),
-      encodePoolConfig(config),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      encodePoolConfig(config) as any,
     ],
     callerAddress: adminAddress,
   });

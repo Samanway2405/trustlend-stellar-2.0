@@ -61,6 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setTimeout(() => {
         setToasts((prev) => {
           if (prev.length === 0) {
+            // eslint-disable-next-line no-use-before-define
             processQueue();
           }
           return prev;

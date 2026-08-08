@@ -34,6 +34,12 @@ export function AuthAccessButton({ className, buttonLabel = "Sign in" }: AuthAcc
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
+  const closeModal = () => {
+    setOpen(false);
+    setMessage(null);
+    setIsLoading(false);
+  };
+
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -53,11 +59,7 @@ export function AuthAccessButton({ className, buttonLabel = "Sign in" }: AuthAcc
     }
   }, [open]);
 
-  const closeModal = () => {
-    setOpen(false);
-    setMessage(null);
-    setIsLoading(false);
-  };
+  // Removed from here
 
   const persistPendingRole = () => {
     if (typeof window === "undefined") {
