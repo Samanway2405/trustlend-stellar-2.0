@@ -13,9 +13,7 @@
 
 import type {
   SorobanEvent,
-  Store,
 } from "@subql/types-stellar";
-import { BigNumber } from "ethers";
 
 // ─── Type helpers ────────────────────────────────────────────────────────────
 
@@ -29,11 +27,11 @@ function addressToString(raw: unknown): string {
 }
 
 /** Decode an i128 ScVal to a BigNumber. */
-function toBigNumber(raw: unknown): BigNumber {
-  if (typeof raw === "bigint") return BigNumber.from(raw.toString());
-  if (typeof raw === "number") return BigNumber.from(raw);
-  if (typeof raw === "string") return BigNumber.from(raw);
-  return BigNumber.from(0);
+function toBigNumber(raw: unknown): bigint {
+  if (typeof raw === "bigint") return raw;
+  if (typeof raw === "number") return BigInt(raw);
+  if (typeof raw === "string") return BigInt(raw);
+  return 0n;
 }
 
 /** Decode a u32 ScVal to a number. */
@@ -61,7 +59,9 @@ function symbolToString(raw: unknown): string {
  * = NEXT_PUBLIC_LENDING_CONTRACT_ID and topic prefix "loan".
  * Routes to sub-handlers based on the second topic element.
  */
-export async function handleLendingEvent(event: SorobanEvent): Promise<void> {
+export async function handleLendingEvent(rawEvent: SorobanEvent): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const event = rawEvent as any;
   const { topic, data, ledger } = event;
   const eventType = symbolToString(topic[1] ?? "");
   const params = extractParams(data);
@@ -95,7 +95,9 @@ export async function handleLendingEvent(event: SorobanEvent): Promise<void> {
  * Registered in project.yaml as `handleReputationEvent` with filter
  * contractId = NEXT_PUBLIC_REPUTATION_CONTRACT_ID.
  */
-export async function handleReputationEvent(event: SorobanEvent): Promise<void> {
+export async function handleReputationEvent(rawEvent: SorobanEvent): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const event = rawEvent as any;
   const { topic, data } = event;
   const eventType = symbolToString(topic[0] ?? "");
   const subType = symbolToString(topic[1] ?? "");
@@ -129,7 +131,9 @@ export async function handleReputationEvent(event: SorobanEvent): Promise<void> 
  * Registered in project.yaml as `handleEscrowEvent` with filter
  * contractId = NEXT_PUBLIC_ESCROW_CONTRACT_ID.
  */
-export async function handleEscrowEvent(event: SorobanEvent): Promise<void> {
+export async function handleEscrowEvent(rawEvent: SorobanEvent): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const event = rawEvent as any;
   const { topic, data, ledger } = event;
   const eventType = symbolToString(topic[1] ?? "");
   const params = extractParams(data);
@@ -224,8 +228,8 @@ async function handleLoanDefaulted(
       loanId: loanId.toString(),
       borrowerAddress: "",
       liquidatorAddress: "",
-      repaidAmount: BigNumber.from(0),
-      collateralSeized: BigNumber.from(0),
+      repaidAmount: 0n,
+      collateralSeized: 0n,
       ledgerHeight: ledger.sequence,
       timestamp: new Date(ledger.timestamp ?? Date.now()),
     },
@@ -329,6 +333,10 @@ function extractParams(data: unknown): unknown[] {
 
 // ─── Re-export store and logger from SubQuery runtime ─────────────────────────
 // These are injected by the SubQuery node at runtime.
+interface Store {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  set(entity: string, id: string, data: any): Promise<void>;
+}
 declare const store: Store;
 declare const logger: {
   info: (msg: string) => void;

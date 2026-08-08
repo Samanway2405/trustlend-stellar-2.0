@@ -58,6 +58,16 @@ export function WithdrawToFiatButton({ walletAddress }: WithdrawToFiatButtonProp
   const startButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
+  const reset = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStep("idle");
+    setError(null);
+    setTx(null);
+    setInteractiveUrl(null);
+    setAmount("");
+  }, []);
+
   // Clean up any in-flight polling when the modal closes / unmounts.
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -92,15 +102,7 @@ export function WithdrawToFiatButton({ walletAddress }: WithdrawToFiatButtonProp
     }
   }, [open, step]);
 
-  const reset = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStep("idle");
-    setError(null);
-    setTx(null);
-    setInteractiveUrl(null);
-    setAmount("");
-  }, []);
+  // Removed from here
 
   const startWithdraw = useCallback(async () => {
     setError(null);
@@ -286,9 +288,9 @@ export function WithdrawToFiatButton({ walletAddress }: WithdrawToFiatButtonProp
                 </button>
               </div>
               <p id="withdraw-modal-description" style={{ fontSize: "0.82rem", color: "#6b7280", marginTop: 0 }}>
-                Powered by Stellar Anchor SEP-24. You'll sign a one-time login
+                Powered by Stellar Anchor SEP-24. You&apos;ll sign a one-time login
                 challenge in {getWalletProviderLabel(getConnectedWalletProviderSafe())},
-                then enter your payout details in the anchor's secure window.
+                then enter your payout details in the anchor&apos;s secure window.
               </p>
 
             {step === "idle" && (

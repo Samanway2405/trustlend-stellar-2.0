@@ -5,7 +5,8 @@ import { useEffect, useRef } from "react";
 interface FocusTrapProps {
   children: React.ReactNode;
   active?: boolean;
-  initialFocusRef?: React.RefObject<HTMLElement>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  initialFocusRef?: React.RefObject<any>;
 }
 
 /**

@@ -133,11 +133,12 @@ export async function setAssetCollateralConfig(
     args: [
       addressToScVal(adminAddress),
       addressToScVal(assetAddress),
-      {
+      ({
         collateral_factor_bps: u32ToScVal(config.collateralFactorBps),
         has_price_oracle: config.hasPriceOracle,
         volatility_bps: u32ToScVal(config.volatilityBps),
-      },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any),
     ],
     callerAddress: adminAddress,
   });
@@ -416,7 +417,8 @@ export async function createLoanRequest(
     method: "create_loan_request",
     args: [
       addressToScVal(borrowerAddress),
-      requestInput,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      requestInput as any,
     ],
     callerAddress: borrowerAddress,
   });

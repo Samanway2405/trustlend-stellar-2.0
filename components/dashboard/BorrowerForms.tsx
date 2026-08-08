@@ -343,8 +343,7 @@ export function BorrowerForms({
             duration,
             onChainRate,
             onChainMax,
-            collateralAsset,
-            collateralAmountStroops,
+            [{ asset: collateralAsset, amount: collateralAmountStroops }],
             rateModel === "fixed" ? "Fixed" : "Floating"
           );
 

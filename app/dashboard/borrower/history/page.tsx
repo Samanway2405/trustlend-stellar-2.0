@@ -133,6 +133,7 @@ export default async function BorrowerHistoryPage() {
 
     let txHash = "";
     try {
+      if (!supabase) continue;
       const { data: repayTx } = await supabase
         .from("ledger_transactions")
         .select("metadata")

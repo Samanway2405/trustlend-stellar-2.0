@@ -49,6 +49,7 @@ export function RpcHealthProvider({
 
   useEffect(() => {
     mountedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     check();
     const interval = setInterval(check, POLL_INTERVAL);
     return () => {
