@@ -116,6 +116,7 @@ fn test_expired_proof_panics() {
     let mut proof_array = [0u8; 64];
     proof_array[0] = 0x01;
     let proof_bytes = BytesN::from_array(&env, &proof_array);
+    env.ledger().set_timestamp(1_000_000_000);
     let expiration = env.ledger().timestamp() - 10; // Expired
 
     let payload = ZkProofPayload {

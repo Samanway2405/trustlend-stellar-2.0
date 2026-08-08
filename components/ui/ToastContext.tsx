@@ -31,6 +31,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shownIdsRef = useRef<Set<string>>(new Set());
 
+  const processQueueRef = useRef<() => void>();
+
   const processQueue = useCallback(() => {
     if (toasts.length >= 3 || queueRef.current.length === 0) {
       setIsShowing(false);
@@ -61,14 +63,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setTimeout(() => {
         setToasts((prev) => {
           if (prev.length === 0) {
-            // eslint-disable-next-line no-use-before-define
-            processQueue();
+            processQueueRef.current?.();
           }
           return prev;
         });
       }, TOAST_QUEUE_DELAY);
     }, duration);
   }, [toasts.length]);
+
+  useEffect(() => {
+    processQueueRef.current = processQueue;
+  }, [processQueue]);
 
   const toast = useCallback((toastData: Omit<Toast, "id">): string => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
