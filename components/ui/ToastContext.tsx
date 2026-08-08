@@ -31,7 +31,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shownIdsRef = useRef<Set<string>>(new Set());
 
-  const processQueueRef = useRef<() => void>();
+  const processQueueRef = useRef<(() => void) | null>(null);
 
   const processQueue = useCallback(() => {
     if (toasts.length >= 3 || queueRef.current.length === 0) {

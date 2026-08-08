@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, String};
 
 fn setup_test() -> (Env, Address, ZkCreditVerifierContractClient<'static>) {
     let env = Env::default();
