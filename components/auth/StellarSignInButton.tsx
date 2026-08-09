@@ -6,16 +6,19 @@ import { Loader2 } from "lucide-react";
 import { signInWithStellar } from "@/lib/auth/siws-client";
 import { getDashboardPath } from "@/lib/auth/roles";
 
+import { UserRole } from "@/lib/auth/roles";
+
 interface StellarSignInButtonProps {
   className?: string;
   disabled?: boolean;
+  role?: UserRole;
 }
 
 /**
  * "Sign in with Stellar" (SIWS / SEP-0010) button. Drives the wallet challenge
  * → sign → verify flow and, on success, routes to the user's dashboard.
  */
-export function StellarSignInButton({ className, disabled }: StellarSignInButtonProps) {
+export function StellarSignInButton({ className, disabled, role }: StellarSignInButtonProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +27,8 @@ export function StellarSignInButton({ className, disabled }: StellarSignInButton
     setIsLoading(true);
     setError(null);
     try {
-      const { role } = await signInWithStellar();
-      router.push(getDashboardPath(role));
+      const result = await signInWithStellar(undefined, role);
+      router.push(getDashboardPath(result.role));
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Stellar sign-in failed.");

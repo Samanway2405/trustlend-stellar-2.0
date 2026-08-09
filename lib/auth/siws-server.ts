@@ -202,13 +202,14 @@ function adminClient() {
  * Ensure a Supabase user exists for `address` and return a fresh session
  * (access + refresh tokens) the client can adopt via `auth.setSession`.
  */
-export async function issueSessionForWallet(address: string): Promise<{
+export async function issueSessionForWallet(address: string, role?: string): Promise<{
   session: Session;
   isNewUser: boolean;
 }> {
   const email = walletEmail(address);
   const password = walletPassword(address);
   const admin = adminClient();
+  const accountType = (role === "borrower" || role === "lender") ? role : "borrower";
 
   // Create the wallet user if it doesn't exist yet (idempotent).
   let isNewUser = false;
@@ -218,7 +219,7 @@ export async function issueSessionForWallet(address: string): Promise<{
     email_confirm: true,
     user_metadata: {
       wallet_address: address,
-      account_type: "borrower",
+      account_type: accountType,
       auth_method: "siws",
       full_name: `Stellar ${address.slice(0, 4)}…${address.slice(-4)}`,
     },
