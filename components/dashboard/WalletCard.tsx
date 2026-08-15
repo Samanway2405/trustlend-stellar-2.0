@@ -49,7 +49,7 @@ export function WalletCard({
   }, [address]);
 
   useEffect(() => {
-    setSelectedProvider(getStoredWalletProvider());
+    setSelectedProvider(getStoredWalletProvider() || "freighter");
   }, []);
 
   const isWalletConnected = Boolean(walletAddress);
