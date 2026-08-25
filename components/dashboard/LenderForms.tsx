@@ -961,6 +961,41 @@ export function LenderForms({
           >
             Verify on Stellar Explorer ↗
           </a>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const { isConnected, watchAsset } = await import('@stellar/freighter-api');
+                if (await isConnected()) {
+                  await watchAsset({
+                    assetCode: 'TLP',
+                    assetIssuer: PLATFORM_WALLET || 'GAJ6X3GHTO5XCQ6M5R36B63Y423J4R7G7S2G5L2W33ZMBF4D63Y6Y7R6', // fallback for demo
+                    network: 'TESTNET'
+                  });
+                } else {
+                  alert("Freighter not connected or available.");
+                }
+              } catch (e: any) {
+                console.error(e);
+                alert("Failed to add token: " + (e.message || "Unknown error"));
+              }
+            }}
+            style={{
+              display: "block",
+              width: "100%",
+              marginTop: "0.5rem",
+              background: "transparent",
+              border: "1px solid #7e2fd0",
+              color: "#c29df6",
+              padding: "0.45rem",
+              borderRadius: "0.5rem",
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            + Add LP Token to Wallet
+          </button>
         </div>
       )}
 
