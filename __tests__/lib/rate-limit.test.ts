@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { enforceRouteRateLimit } from "@/lib/rate-limit";
+import {
+  GLOBAL_API_POLICY,
+  enforceGlobalApiRateLimit,
+  enforceRouteRateLimit,
+  getRequestIdentifier,
+} from "@/lib/rate-limit";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -22,6 +27,14 @@ function createMockRequest({
   return {
     headers,
     nextUrl: { pathname, searchParams: new URLSearchParams() },
+  } as unknown as NextRequest;
+}
+
+/** Build a request carrying only the given headers — nothing is implied. */
+function createRawRequest(headerEntries: Record<string, string>): NextRequest {
+  return {
+    headers: new Headers(headerEntries),
+    nextUrl: { pathname: "/api/pools", searchParams: new URLSearchParams() },
   } as unknown as NextRequest;
 }
 
@@ -284,5 +297,199 @@ describe("enforceRouteRateLimit", () => {
     const req = createMockRequest({ pathname: "/api/pools", ip: "unknown" });
     const res = await enforceRouteRateLimit(req);
     expect(res).toBeNull();
+  });
+
+  // ── Dynamic route policies ────────────────────────────────────────────────
+
+  it("applies the receipt policy to dynamic loan ids", async () => {
+    const req = createMockRequest({
+      pathname: "/api/loans/abc-123/receipt",
+      ip: "10.1.0.1",
+    });
+
+    // /api/loans/[id]/receipt allows 10 per 10 minutes
+    for (let i = 0; i < 10; i++) {
+      expect(await enforceRouteRateLimit(req)).toBeNull();
+    }
+
+    const res = await enforceRouteRateLimit(req);
+    expect(res?.status).toBe(429);
+    expect(res!.headers.get("X-RateLimit-Limit")).toBe("10");
+  });
+});
+
+// ─── Client IP resolution ─────────────────────────────────────────────────────
+
+describe("getRequestIdentifier", () => {
+  it("prefers the platform-injected Vercel header", () => {
+    const req = createRawRequest({
+      "x-vercel-ip-address": "9.9.9.9",
+      "x-forwarded-for": "1.1.1.1",
+    });
+
+    expect(getRequestIdentifier(req)).toBe("9.9.9.9");
+  });
+
+  it("falls back to x-forwarded-for on self-hosted deployments", () => {
+    const req = createRawRequest({ "x-forwarded-for": "203.0.113.7" });
+
+    expect(getRequestIdentifier(req)).toBe("203.0.113.7");
+  });
+
+  it("uses x-real-ip when no forwarded-for chain is present", () => {
+    const req = createRawRequest({ "x-real-ip": "198.51.100.4" });
+
+    expect(getRequestIdentifier(req)).toBe("198.51.100.4");
+  });
+
+  it("takes the originating client from a forwarded-for chain", () => {
+    const req = createRawRequest({
+      "x-forwarded-for": "203.0.113.7, 70.41.3.18, 150.172.238.178",
+    });
+
+    expect(getRequestIdentifier(req)).toBe("203.0.113.7");
+  });
+
+  it("falls back to 'unknown' when no IP header is present", () => {
+    expect(getRequestIdentifier(createRawRequest({}))).toBe("unknown");
+  });
+
+  it("skips blank header values", () => {
+    const req = createRawRequest({
+      "cf-connecting-ip": "  ",
+      "x-forwarded-for": "203.0.113.9",
+    });
+
+    expect(getRequestIdentifier(req)).toBe("203.0.113.9");
+  });
+});
+
+// ─── Global per-IP ceiling ────────────────────────────────────────────────────
+
+describe("enforceGlobalApiRateLimit", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("caps at 100 requests per minute per IP", () => {
+    expect(GLOBAL_API_POLICY).toEqual({ limit: 100, window: "1 m" });
+  });
+
+  it("allows the first 100 requests and rejects the 101st with 429", async () => {
+    const req = createMockRequest({ pathname: "/api/pools", ip: "172.16.0.1" });
+
+    for (let i = 0; i < 100; i++) {
+      expect(await enforceGlobalApiRateLimit(req)).toBeNull();
+    }
+
+    const res = await enforceGlobalApiRateLimit(req);
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(429);
+  });
+
+  it("counts every /api route against the same per-IP bucket", async () => {
+    const ip = "172.16.0.2";
+    const paths = ["/api/pools", "/api/analytics", "/api/reputation", "/api/treasury"];
+
+    // 100 requests spread across four different endpoints
+    for (let i = 0; i < 100; i++) {
+      const req = createMockRequest({ pathname: paths[i % paths.length], ip });
+      expect(await enforceGlobalApiRateLimit(req)).toBeNull();
+    }
+
+    const res = await enforceGlobalApiRateLimit(
+      createMockRequest({ pathname: "/api/pools", ip })
+    );
+    expect(res?.status).toBe(429);
+  });
+
+  it("429 response carries Retry-After and rate-limit headers", async () => {
+    const req = createMockRequest({ pathname: "/api/pools", ip: "172.16.0.3" });
+
+    for (let i = 0; i < 100; i++) {
+      await enforceGlobalApiRateLimit(req);
+    }
+
+    const res = await enforceGlobalApiRateLimit(req);
+    const headers = res!.headers;
+
+    expect(headers.get("X-RateLimit-Limit")).toBe("100");
+    expect(headers.get("X-RateLimit-Remaining")).toBe("0");
+    expect(headers.get("X-RateLimit-Reset")).toBeTruthy();
+    expect(Number(headers.get("Retry-After"))).toBeGreaterThanOrEqual(1);
+
+    const body = await res!.json();
+    expect(body).toHaveProperty("error", "Too many requests, please slow down.");
+  });
+
+  it("rate-limits each IP independently", async () => {
+    const noisy = createMockRequest({ pathname: "/api/pools", ip: "172.16.0.4" });
+    const quiet = createMockRequest({ pathname: "/api/pools", ip: "172.16.0.5" });
+
+    for (let i = 0; i < 100; i++) {
+      await enforceGlobalApiRateLimit(noisy);
+    }
+
+    expect((await enforceGlobalApiRateLimit(noisy))?.status).toBe(429);
+    expect(await enforceGlobalApiRateLimit(quiet)).toBeNull();
+  });
+
+  it("uses a bucket separate from the per-route limits", async () => {
+    const ip = "172.16.0.6";
+    const req = createMockRequest({ pathname: "/api/pools", ip });
+
+    // Exhaust the global ceiling
+    for (let i = 0; i < 100; i++) {
+      await enforceGlobalApiRateLimit(req);
+    }
+    expect((await enforceGlobalApiRateLimit(req))?.status).toBe(429);
+
+    // The per-route counter for this IP is untouched
+    expect(await enforceRouteRateLimit(req)).toBeNull();
+  });
+
+  it("recovers once the 1-minute window elapses", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now());
+
+    const req = createMockRequest({ pathname: "/api/pools", ip: "172.16.0.7" });
+
+    for (let i = 0; i < 100; i++) {
+      await enforceGlobalApiRateLimit(req);
+    }
+    expect((await enforceGlobalApiRateLimit(req))?.status).toBe(429);
+
+    vi.advanceTimersByTime(61_000);
+    expect(await enforceGlobalApiRateLimit(req)).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it("bypasses the ceiling for the admin bearer token", async () => {
+    vi.stubEnv("ADMIN_SECRET_KEY", "admin-global-key");
+
+    const req = createMockRequest({
+      pathname: "/api/pools",
+      ip: "172.16.0.8",
+      authToken: "admin-global-key",
+    });
+
+    for (let i = 0; i < 150; i++) {
+      expect(await enforceGlobalApiRateLimit(req)).toBeNull();
+    }
+
+    vi.unstubAllEnvs();
+  });
+
+  it("bypasses the ceiling for whitelisted IPs", async () => {
+    vi.stubEnv("RATE_LIMIT_WHITELIST", "172.16.0.9");
+
+    const req = createMockRequest({ pathname: "/api/pools", ip: "172.16.0.9" });
+
+    for (let i = 0; i < 150; i++) {
+      expect(await enforceGlobalApiRateLimit(req)).toBeNull();
+    }
+
+    vi.unstubAllEnvs();
   });
 });

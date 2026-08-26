@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 const PAGE_SIZE = 20;
 
@@ -11,6 +12,9 @@ const PAGE_SIZE = 20;
  */
 export async function GET(request: NextRequest) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const { user } = await requireAuthenticatedUser("lender");
     const supabase = await getServerSupabaseClient();
     const srClient = getServiceRoleClient();
