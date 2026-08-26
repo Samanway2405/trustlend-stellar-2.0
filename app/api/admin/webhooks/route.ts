@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
 
 const webhookSchema = z.object({
@@ -9,7 +10,10 @@ const webhookSchema = z.object({
   topic: z.string().min(1, "Topic is required"),
 });
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const rateLimited = await enforceRouteRateLimit(request);
+  if (rateLimited) return rateLimited;
+
   const supabase = await getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
@@ -31,7 +35,10 @@ export async function GET() {
   return NextResponse.json({ webhooks: data ?? [] });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const rateLimited = await enforceRouteRateLimit(request);
+  if (rateLimited) return rateLimited;
+
   const supabase = await getServerSupabaseClient();
   if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 

@@ -308,6 +308,71 @@ See the [complete setup guide →](GETTING_STARTED.md)
 
 ---
 
+## 🚀 Deploying Contracts to Testnet
+
+One command builds every Soroban contract, deploys it to the Stellar Testnet,
+initializes and wires the contracts together, and writes the resulting contract
+IDs straight into your `.env.local`:
+
+```bash
+npm run deploy:testnet
+```
+
+There is no prerequisite step: if the `trustlend-admin` identity does not exist
+yet, the CLI creates it and funds it from friendbot before deploying.
+
+Preview the whole run without touching the network or your files:
+
+```bash
+npm run deploy:testnet:dry
+```
+
+### What it writes
+
+Contract IDs land directly in `.env.local`. Keys already present are updated **in
+place** — your Supabase keys, API secrets and comments are left untouched, and a
+`.env.local.bak` is taken first. A reference copy also goes to `.env.contracts`.
+
+| Contract | Env key |
+| --- | --- |
+| Reputation | `NEXT_PUBLIC_REPUTATION_CONTRACT_ID` |
+| Escrow | `NEXT_PUBLIC_ESCROW_CONTRACT_ID` |
+| Lending | `NEXT_PUBLIC_LENDING_CONTRACT_ID` |
+| Default Management | `NEXT_PUBLIC_DEFAULT_CONTRACT_ID` |
+| Pooled Lending | `NEXT_PUBLIC_POOLED_LENDING_CONTRACT_ID` |
+| Governance | `NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID` |
+| MultiSigAdmin | `NEXT_PUBLIC_MULTISIG_ADMIN_CONTRACT_ID` |
+| TLEND token / vesting / airdrop | `NEXT_PUBLIC_TLEND_*_CONTRACT_ID` |
+
+### Options
+
+```bash
+npm run deploy:testnet -- --help
+```
+
+| Flag | Purpose |
+| --- | --- |
+| `--only lending,escrow` | Deploy a subset (always in dependency order) |
+| `--resume` | Reuse IDs from the last run instead of redeploying |
+| `--skip-build` | Reuse the WASM already in `contracts/target` |
+| `--skip-init` / `--skip-bindings` | Skip initialization / TypeScript bindings |
+| `--env-file .env.staging` | Write to a different env file |
+| `--network futurenet` | Target another network |
+| `--dry-run` | Print every command without executing it |
+
+Contract IDs are recorded to `contracts/.deployments/<network>.json` after each
+individual deployment, so a run that fails partway can be picked up with
+`--resume` without paying to deploy the same contract twice.
+
+Optional environment overrides: `MULTISIG_SIGNERS`, `MULTISIG_THRESHOLD`,
+`ORACLE_ADDRESS`, `TLEND_TOTAL_SUPPLY`, `TLEND_AIRDROP_MERKLE_ROOT`.
+
+> The older `contracts/scripts/deploy.sh` / `deploy.ps1` still work but are
+> superseded: the CLI is cross-platform, handles key creation and funding, and
+> deploys the pooled-lending contract those scripts omitted.
+
+---
+
 <details>
 <summary><b>🧩 Smart Contracts & Deployment Details (Click to Expand)</b></summary>
 <br>
@@ -394,55 +459,78 @@ curl -X POST https://your-app.vercel.app/api/cron/payment-due \
 
 ---
 
-## 🧾 Lender Tax Report
+## 🚦 API Rate Limiting
 
-Lenders can export a CSV of every interest payment they have earned, from
-**Portfolio → Tax Report**. Pick a tax year (or *All years*) and hit
-**Export Tax CSV**.
+All public-facing API routes are rate limited to protect backend services from
+brute-force attacks, scraping, and misconfigured clients.
 
-### What the CSV contains
+### Two layers
 
-One row per interest-income event:
+| Layer | Scope | Limit | Enforced in |
+| --- | --- | --- | --- |
+| **Global ceiling** | Every `/api/*` request, keyed by client IP | **100 requests / minute / IP** | [`proxy.ts`](proxy.ts) — before the request reaches a handler |
+| **Per-route policy** | One endpoint, keyed by client IP | Stricter, endpoint-specific (e.g. `POST /api/loans/apply` → 5 per 10 min) | `enforceRouteRateLimit()` at the top of each route handler |
 
-| Column | Meaning |
-| --- | --- |
-| `date` | UTC calendar date the income is attributed to |
-| `asset` | Asset the interest was paid in (`XLM`, `USDC`, …) |
-| `amount` | Interest earned, to 6 decimal places |
-| `category` | `pool_interest_realized`, `pool_interest_accrued`, or `p2p_loan_interest` |
-| `source` | Pool name, or the loan reference |
-| `principal` | Capital deployed against that position or loan |
-| `gross_received` | Total received including return of capital (P2P rows) |
-| `reference` | Position or loan id |
-| `tx_hash` | Stellar transaction hash, where the income was an on-chain payment |
+The two layers use independent counters, so an expensive endpoint stays tightly
+capped even when the caller is well under the global ceiling.
 
-### How interest is calculated
+### Exceeding a limit
 
-Two income sources are covered — pool positions **and** directly funded
-marketplace loans. (The older PDF summary at `?format=pdf` only ever reported
-pool positions.)
+Requests over the limit are rejected with **HTTP 429** before any database or
+Stellar network work is performed:
 
-For P2P loans, a repayment is mostly the lender's own capital coming back, so
-interest is recognised **return-of-capital first**: repayments count against the
-principal the lender put in, and only what arrives once the principal is whole
-counts as income. Funding 1,000 XLM and being repaid 900 then 750 yields a
-single income row of 150 XLM dated to the second repayment — not 1,650 XLM of
-"income".
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 37
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1735689600000
 
-Pool interest on a **closed** position is attributed to the closing date and
-marked realised; interest still accruing on an **open** position is attributed
-to the opening date and marked accrued, since it has not been paid out yet.
+{ "error": "Too many requests, please slow down." }
+```
 
-### Format notes
+### Storage backend
 
-Output is RFC 4180 — CRLF line endings, quoted cells where needed — with a UTF-8
-BOM so Excel opens it correctly. Text cells beginning with `=`, `+`, `-` or `@`
-are prefixed with `'` so a pool name cannot smuggle a formula into the
-spreadsheet ([CSV injection](https://owasp.org/www-community/attacks/CSV_Injection)).
+Counters are kept in **Upstash Redis** when `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` are set, so limits hold across serverless instances.
+Without them the limiter falls back to a bounded in-memory store (capped at
+10,000 buckets with automatic pruning) — per-instance only, and fine for local
+development. If Redis is unreachable the limiter **fails open** rather than
+blocking legitimate traffic.
 
-> Generated by the server rather than in the browser: the report needs repayment
-> rows that belong to the borrower and are not readable by the lender under RLS.
-> This is an informational summary, not tax advice.
+### Client IP resolution
+
+The caller is identified from the first present header of
+`x-vercel-ip-address` → `cf-connecting-ip` → `x-vercel-forwarded-for` →
+`x-real-ip` → `x-forwarded-for` (first hop of the chain). Platform-injected
+headers are preferred because a client cannot forge them.
+
+### Bypass
+
+Two escape hatches skip rate limiting entirely — see [`.env.example`](.env.example):
+
+- `Authorization: Bearer <ADMIN_SECRET_KEY>` — trusted internal/admin callers.
+- `RATE_LIMIT_WHITELIST` — comma-separated IPs (uptime probes, Prometheus scrapers).
+
+### Adding a policy to a new route
+
+Register the limit in `ROUTE_POLICIES` (or `ROUTE_PATTERN_POLICIES` for dynamic
+segments) in [`lib/rate-limit.ts`](lib/rate-limit.ts), then guard the handler:
+
+```ts
+export async function POST(request: NextRequest) {
+  const rateLimited = await enforceRouteRateLimit(request);
+  if (rateLimited) return rateLimited;
+
+  // ...handler logic
+}
+```
+
+Routes with no explicit policy fall back to **20 requests / minute / IP**.
+Scheduler (`/api/cron/*`) and anchor-callback (`/api/webhooks/*`) endpoints are
+deliberately left to the global ceiling only — they authenticate with a shared
+secret or a verified signature, and a per-route cap could drop legitimate
+scheduled runs or provider retries.
 
 ---
 

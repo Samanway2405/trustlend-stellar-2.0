@@ -1,15 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import PDFDocument from "pdfkit";
-import { NextResponse } from "next/server";
-import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
-import { getLenderTaxReportData } from "@/lib/lender/tax-report-data";
-import {
-  buildTaxReportRows,
-  summarizeTaxReport,
-  taxReportFilename,
-  toCsv,
-} from "@/lib/lender/tax-report";
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -17,17 +11,11 @@ function formatXlm(value: number | string | null | undefined) {
   return `${Number(value ?? 0).toFixed(2)} XLM`;
 }
 
-/**
- * GET /api/lender/tax-report?format=csv&year=2026
- *
- * `format=csv` returns a per-event interest-income CSV (Issue #271) covering
- * both pool interest and directly funded marketplace loans.
- * `format=pdf` (the default) returns the original pool-only PDF summary.
- *
- * `year` defaults to the current year; pass `year=all` for the full history.
- */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const { searchParams } = new URL(request.url);
     const yearStr = searchParams.get("year");
     const format = (searchParams.get("format") ?? "pdf").toLowerCase();

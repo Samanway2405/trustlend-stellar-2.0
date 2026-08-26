@@ -11,6 +11,7 @@ import { buildStellarTxVerificationUrl, extractPossibleTxHash, isLikelyTxHash } 
 import { BorrowerRepayWidget } from "@/components/dashboard/BorrowerRepayWidget";
 import { WithdrawToFiatButton } from "@/components/dashboard/WithdrawToFiatButton";
 import { borrowerNavLinks } from "@/lib/dashboard/borrower-links";
+import { getFundingProgress } from "@/lib/loans/funding";
 import { HealthFactorGauge } from "@/components/dashboard/HealthFactorGauge";
 import {
   getIndexedBorrowerReadModel,
@@ -60,7 +61,7 @@ export default async function BorrowerDashboardPage() {
           .maybeSingle(),
         supabase
           .from("loans")
-          .select("id, status, principal_amount, repaid_amount, apr_bps, duration_days, due_at, created_at, metadata")
+          .select("id, status, principal_amount, funded_amount, repaid_amount, apr_bps, duration_days, due_at, created_at, metadata")
           .eq("borrower_id", user.id)
           .order("created_at", { ascending: false })
           .limit(20),
@@ -103,10 +104,8 @@ export default async function BorrowerDashboardPage() {
         .in("ref_id", loanIds)
     : { data: [] };
   const loanTxMap: Record<string, string> = {};
-  const fundedLoanIds = new Set<string>();
   for (const entry of ledgerRes.data ?? []) {
     if (String(entry.ref_id)) {
-      fundedLoanIds.add(String(entry.ref_id));
       const extracted = extractPossibleTxHash(entry.metadata);
       if (extracted) {
         loanTxMap[String(entry.ref_id)] = extracted;
@@ -116,9 +115,12 @@ export default async function BorrowerDashboardPage() {
 
   const normalizedLoans = loans.map((loan) => {
     const status = String(loan.status ?? "requested");
-    const hasFundingLedger = fundedLoanIds.has(String(loan.id));
-    const effectiveStatus = status === "requested" && hasFundingLedger ? "funded" : status;
-    
+    // Only a fully funded request counts as "funded" — a partially filled loan
+    // is still collecting contributions and has not activated (Issue #269).
+    const progress = getFundingProgress(loan.principal_amount, loan.funded_amount);
+    const effectiveStatus =
+      status === "requested" && progress.isFullyFunded ? "funded" : status;
+
     // Extract rate model from metadata, default to fixed for backward compatibility
     let rateModel = "fixed";
     if (loan.metadata && typeof loan.metadata === "object" && "rate_model" in loan.metadata) {

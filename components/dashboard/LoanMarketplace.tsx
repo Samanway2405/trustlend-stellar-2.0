@@ -2,10 +2,16 @@
 
 import { Fragment, useState } from "react";
 import { DirectFundForm } from "./DirectFundForm";
+import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
+import { getFundingProgress } from "@/lib/loans/funding";
 
 interface MarketplaceLoan {
   id: string;
   principal_amount: number;
+  /** Total contributed by all lenders so far (Issue #269). */
+  funded_amount?: number;
+  /** Lenders who have already taken a slice of this loan. */
+  lender_count?: number;
   apr_bps: number;
   duration_days: number;
   trust_score: number;
@@ -86,16 +92,23 @@ export function LoanMarketplace({
             <th>Borrower</th>
             <th>Trust Score</th>
             <th>Amount</th>
+            <th>Funding Progress</th>
             <th>APR</th>
             <th>Duration</th>
-            <th>Est. Return</th>
+            <th>Est. Return (max)</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {loans.map((loan) => {
+            const progress = getFundingProgress(
+              loan.principal_amount,
+              loan.funded_amount ?? 0
+            );
+            // Estimated return is quoted on the slice still available, since
+            // that is the most a lender can take on this loan right now.
             const interestXlm = (
-              (loan.principal_amount * (loan.apr_bps / 10000) * loan.duration_days) / 365
+              (progress.remaining * (loan.apr_bps / 10000) * loan.duration_days) / 365
             ).toFixed(2);
             const isExpanded = expandedId === loan.id;
             const hasWallet = Boolean(loan.borrower_wallet);
@@ -120,6 +133,14 @@ export function LoanMarketplace({
                       {loan.principal_amount.toFixed(2)}
                     </strong>{" "}
                     <span style={{ fontSize: "0.75rem", opacity: 0.6, color: "#444" }}>XLM</span>
+                  </td>
+                  <td>
+                    <FundingProgressBar
+                      principalAmount={loan.principal_amount}
+                      fundedAmount={loan.funded_amount ?? 0}
+                      lenderCount={loan.lender_count}
+                      compact
+                    />
                   </td>
                   <td style={{ fontWeight: 600, color: "#111" }}>
                     {(loan.apr_bps / 100).toFixed(2)}%
@@ -146,7 +167,11 @@ export function LoanMarketplace({
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {isExpanded ? "Close" : "Fund ->"}
+                        {isExpanded
+                          ? "Close"
+                          : progress.isPartiallyFunded
+                            ? "Top up ->"
+                            : "Fund ->"}
                       </button>
                     )}
                   </td>
@@ -155,7 +180,7 @@ export function LoanMarketplace({
                 {isExpanded && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       style={{
                         padding: "1.5rem 1rem",
                         background: "#fafafa",
@@ -168,6 +193,8 @@ export function LoanMarketplace({
                           loan={{
                             id: loan.id,
                             principal_amount: loan.principal_amount,
+                            funded_amount: loan.funded_amount ?? 0,
+                            lender_count: loan.lender_count,
                             apr_bps: loan.apr_bps,
                             duration_days: loan.duration_days,
                             trust_score: loan.trust_score,

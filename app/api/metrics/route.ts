@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { generateMetricsResponse } from "@/lib/monitoring/metrics";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 /**
  * GET /api/metrics
@@ -14,8 +15,11 @@ import { generateMetricsResponse } from "@/lib/monitoring/metrics";
  *  - HTTP error counter (http_errors_total)
  *  - Process memory gauge (process_memory_bytes)
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const metrics = await generateMetricsResponse();
     return new NextResponse(metrics, {
       status: 200,
