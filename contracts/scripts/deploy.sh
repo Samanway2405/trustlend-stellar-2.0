@@ -1,5 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
+# SUPERSEDED by `npm run deploy:testnet` (issue #270).
+#
+# The Node CLI at scripts/deploy-testnet.ts does everything this script does,
+# plus: it runs on Windows too (so this file and deploy.ps1 no longer have to be
+# kept in sync by hand), it creates and funds the admin key for you, it deploys
+# the pooled_lending contract this script omits, and it writes the contract IDs
+# into .env.local directly instead of leaving you to copy .env.contracts across.
+#
+#   npm run deploy:testnet            # deploy everything
+#   npm run deploy:testnet:dry        # preview without touching the network
+#   npm run deploy:testnet -- --help  # all options
+#
+# This script is kept for now so existing muscle memory and CI jobs keep working.
+# =============================================================================
+# =============================================================================
 # TrustLend – Soroban Contract Deployment Script
 # =============================================================================
 # Prerequisites:
