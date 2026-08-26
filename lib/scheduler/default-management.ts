@@ -120,11 +120,17 @@ async function getFundingInfo(
 
   if (!supabase) return { lenderAddress, onchainLoanId };
 
+  // A loan can be filled by several lenders (Issue #269), so this may match
+  // many rows. Take the largest contributor as the payout designee — the
+  // MultiSigAdmin insurance proposal names a single lender, so splitting an
+  // insurance payout across lenders is a separate piece of work.
   const { data } = await supabase
     .from("ledger_transactions")
-    .select("metadata")
+    .select("metadata, amount")
     .eq("ref_type", "loan_fund")
     .eq("ref_id", loanId)
+    .order("amount", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const raw = data?.metadata;

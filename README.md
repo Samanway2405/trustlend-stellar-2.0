@@ -394,6 +394,66 @@ curl -X POST https://your-app.vercel.app/api/cron/payment-due \
 
 ---
 
+## 🧩 Partial Loan Fills
+
+A large loan request does not need a single lender with deep pockets. Several
+lenders can each fund a slice, and the loan **activates only once it reaches
+100%**.
+
+### How it works
+
+1. A borrower requests, say, 1,000 XLM. The request appears on the marketplace
+   showing `0% funded`.
+2. Lender A funds 400 XLM. The loan stays open at `40% funded`.
+3. Lender B funds 350 XLM → `75% funded`.
+4. Lender C funds the last 250 XLM → `100% funded`. **Only now** does the loan
+   flip to `active`, the due date get set, and the borrower become able to repay.
+
+Each lender's XLM goes directly to the borrower's wallet as it is contributed —
+the same direct-P2P model as before, just in slices.
+
+### Data model
+
+| Object | Role |
+| --- | --- |
+| `loans.funded_amount` | Running total contributed. Source of truth for the progress bar. |
+| `loan_fundings` | One row per lender contribution (`loan_id`, `lender_id`, `amount`, `tx_hash`). |
+| `record_loan_funding()` | Atomic RPC: locks the loan, records the slice, activates at 100%. |
+
+The RPC takes a `FOR UPDATE` lock on the loan row, so two lenders funding the
+same loan at the same moment cannot both read the same remaining balance and
+collectively overfund it. Contributions that would exceed the remainder are
+rejected rather than capped — the lender has already signed for that exact
+amount on-chain, so crediting them less would lose them money.
+
+Replay protection is a unique index on `loan_fundings.tx_hash`: one Stellar
+payment can be claimed exactly once, while a loan can still receive many.
+
+### Repayment across multiple lenders
+
+Repayment is split **pro-rata to each lender's contribution**. The borrower's
+repayment transaction carries one payment operation per lender, plus one for the
+platform fee. Rounding drift at Stellar's 7-decimal precision is handed to the
+largest contributor so the payouts sum exactly and no dust is stranded.
+
+`GET /api/loans/repay/preflight` returns a `lenders[]` array with each address
+and share. It still returns the single `lenderAddress` field (the largest
+contributor) so older clients keep working.
+
+Because a Stellar transaction is capped at 100 operations, a loan with more than
+99 lenders cannot be settled in one transaction; preflight returns a clear 422
+in that case rather than building a transaction that would fail.
+
+### Applying the migration
+
+Partial fills need [`sql/08_partial_loan_fills.sql`](sql/08_partial_loan_fills.sql)
+applied in the Supabase SQL editor. It is backward-compatible: existing
+single-lender loans are backfilled from `ledger_transactions` and report 100%.
+Until it is applied, the funding API returns an actionable error naming the file
+rather than failing obscurely.
+
+---
+
 ## 👥 Contributors
 
 Thanks goes to these wonderful people who have contributed to TrustLend:

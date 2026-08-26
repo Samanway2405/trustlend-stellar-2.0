@@ -6,6 +6,7 @@ import { borrowerNavLinks } from "@/lib/dashboard/borrower-links";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/Badge";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { getFundingProgress } from "@/lib/loans/funding";
 
 export default async function BorrowerRepayPage() {
   const { user } = await requireAuthenticatedUser("borrower");
@@ -16,7 +17,7 @@ export default async function BorrowerRepayPage() {
     ? await Promise.all([
         supabase
           .from("loans")
-          .select("id, status, principal_amount, repaid_amount, apr_bps, duration_days, due_at, created_at")
+          .select("id, status, principal_amount, funded_amount, repaid_amount, apr_bps, duration_days, due_at, created_at")
           .eq("borrower_id", user.id)
           .order("created_at", { ascending: false })
           .limit(20),
@@ -31,19 +32,14 @@ export default async function BorrowerRepayPage() {
   const loans   = loansRes.data ?? [];
   const profile = profileRes.data;
 
-  const loanIds = loans.map((l) => String(l.id));
-  const fundedLedgerRes = supabase && loanIds.length > 0
-    ? await supabase
-        .from("ledger_transactions")
-        .select("ref_id")
-        .eq("ref_type", "loan_fund")
-        .in("ref_id", loanIds)
-    : { data: [] };
-
-  const fundedLoanIds = new Set((fundedLedgerRes.data ?? []).map((row) => String(row.ref_id)));
+  // A loan is only repayable once lenders have covered the full principal —
+  // a partially filled request is not yet active (Issue #269).
   const normalizedLoans = loans.map((loan) => {
     const status = String(loan.status ?? "requested");
-    const effectiveStatus = status === "requested" && fundedLoanIds.has(String(loan.id)) ? "funded" : status;
+    const progress = getFundingProgress(loan.principal_amount, loan.funded_amount);
+    const effectiveStatus =
+      status === "requested" && progress.isFullyFunded ? "funded" : status;
+
     return { ...loan, status: effectiveStatus };
   });
 
