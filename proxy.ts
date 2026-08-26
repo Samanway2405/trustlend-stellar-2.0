@@ -2,26 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { getDashboardPath, normalizeUserRole } from "@/lib/auth/roles";
 import { recordRequestMetrics } from "@/lib/monitoring/metrics";
+import { enforceGlobalApiRateLimit } from "@/lib/rate-limit";
 
-// ── In-memory rate limiter (resets on server restart) ─────────────────────────
-// For production, replace with Redis/Upstash for persistence across instances.
-const requestCounts = new Map<string, { count: number; resetAt: number }>();
-const WINDOW_MS = 60_000;       // 1-minute window
-const MAX_REQUESTS = 100;       // Safety-net: 100 API requests per IP per minute
-                                 // Note: per-route granular limits in lib/rate-limit.ts are
-                                 // the primary control. This is a hard ceiling against
-                                 // brute-force attacks and misconfigured clients.
 const DEV_BYPASS_ENABLED =
   process.env.NODE_ENV !== "production" &&
   process.env.ENABLE_DEV_AUTH_BYPASS === "true";
 
 function isValidUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function getRateLimitKey(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded ? forwarded.split(",")[0].trim() : "unknown";
 }
 
 export async function proxy(request: NextRequest) {
@@ -40,27 +28,17 @@ export async function proxy(request: NextRequest) {
   const bypassRoleRaw = request.headers.get("x-dev-role")?.trim();
   const bypassActive = DEV_BYPASS_ENABLED && !!bypassUserId && isValidUuid(bypassUserId);
 
-  // ── ② Rate limiting on API routes ───────────────────────────────────────────
+  // ── ② Global rate limit on API routes ───────────────────────────────────────
+  // Hard ceiling of 100 requests per minute per IP across all `/api/*` routes.
+  // Per-route granular limits (lib/rate-limit.ts) remain the primary control;
+  // this is the safety net against brute-force and misconfigured clients.
   if (pathname.startsWith("/api/")) {
-    const key = getRateLimitKey(request);
-    const now = Date.now();
-    const record = requestCounts.get(key);
+    const rateLimited = await enforceGlobalApiRateLimit(request);
 
-    if (!record || now > record.resetAt) {
-      requestCounts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    } else {
-      record.count++;
-      if (record.count > MAX_REQUESTS) {
-        const duration = (performance.now() - start) / 1000;
-        recordRequestMetrics(method, pathname, 429, duration);
-        return NextResponse.json(
-          { error: "Too many requests, please slow down." },
-          {
-            status: 429,
-            headers: { "Retry-After": String(Math.ceil((record.resetAt - now) / 1000)) },
-          }
-        );
-      }
+    if (rateLimited) {
+      const duration = (performance.now() - start) / 1000;
+      recordRequestMetrics(method, pathname, 429, duration);
+      return rateLimited;
     }
   }
 

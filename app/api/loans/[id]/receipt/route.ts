@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import PDFDocument from "pdfkit";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -166,8 +167,11 @@ async function generateReceiptPdf({
   return pdfBufferPromise;
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const { id } = await context.params;
     const supabase = await getServerSupabaseClient();
 
