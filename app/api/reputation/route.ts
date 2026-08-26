@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceRoleClient } from "@/lib/supabase/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 // Helper function to get credit tier based on score
 function getReputationTier(score: number): string {
@@ -11,6 +12,9 @@ function getReputationTier(score: number): string {
 
 export async function GET(request: NextRequest) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const { searchParams } = request.nextUrl;
     const address = searchParams.get("address")?.trim();
 

@@ -2,8 +2,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import PDFDocument from "pdfkit";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -11,8 +12,11 @@ function formatXlm(value: number | string | null | undefined) {
   return `${Number(value ?? 0).toFixed(2)} XLM`;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const { searchParams } = new URL(request.url);
     const yearStr = searchParams.get("year");
     const year = yearStr ? parseInt(yearStr, 10) : new Date().getFullYear();
