@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
+import { getDashboardPath } from "@/lib/auth/roles";
 import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
 import { createApplicant, getApplicantId, generateSdkToken } from "@/lib/kyc/provider";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
@@ -9,9 +11,10 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
  *
  * Returns a short-lived SumSub Web SDK token so the browser can
  * initialise the KYC iframe without exposing server credentials.
+ * Available to both borrowers and lenders (lender compliance, issue #262).
  *
  * Flow:
- *  1. Authenticate the user via session cookie
+ *  1. Authenticate the user via session cookie (borrower or lender)
  *  2. Look up or create a SumSub applicant for this user
  *  3. Persist the applicantId on profiles.kyc_provider_id
  *  4. Generate a short-lived SDK token
@@ -20,7 +23,13 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 export async function POST(_request: NextRequest) {
   try {
     // ── 1. Auth ──────────────────────────────────────────────────────────────
-    const { user } = await requireAuthenticatedUser("borrower");
+    const { user, role } = await requireAuthenticatedUser();
+
+    // Borrowers and lenders self-verify. Admins are internal staff and are
+    // routed to their own dashboard instead of the customer KYC flow.
+    if (role === "admin") {
+      redirect(getDashboardPath(role));
+    }
 
     const supabase = await getServerSupabaseClient();
     if (!supabase) {
