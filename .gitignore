@@ -44,6 +44,7 @@ next-env.d.ts
 # ── Rust / Soroban ───────────────────────────────────────────────────────────
 # Cargo build output
 contracts/target/
+contracts/mocks/target/
 # Compiled WASM artifacts 
 **/*.wasm
 # Generated Stellar CLI TypeScript bindings
