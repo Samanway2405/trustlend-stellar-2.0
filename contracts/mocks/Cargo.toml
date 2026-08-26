@@ -1,0 +1,6 @@
+[workspace]
+members = ["mock_oracle"]
+resolver = "2"
+
+[workspace.dependencies]
+soroban-sdk = "22.0.4"

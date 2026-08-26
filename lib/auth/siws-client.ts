@@ -42,7 +42,8 @@ async function postJson(url: string, body: unknown) {
  * `Error` whose message is safe to show the user (mapped from server codes).
  */
 export async function signInWithStellar(
-  preferredProvider?: StellarWalletProvider
+  preferredProvider?: StellarWalletProvider,
+  role?: UserRole
 ): Promise<SiwsResult> {
   const supabase = getBrowserSupabaseClient();
   if (!supabase) {
@@ -76,6 +77,7 @@ export async function signInWithStellar(
   const verify = await postJson("/api/auth/siws/verify", {
     address,
     signedTxXdr: signed.signedTxXdr,
+    role,
   });
   if (!verify.res.ok) {
     throw new Error(mapVerifyError(verify.payload));
@@ -94,9 +96,8 @@ export async function signInWithStellar(
   if (error) {
     throw new Error(`Could not establish session: ${error.message}`);
   }
-
-  const role = normalizeUserRole(data.user?.user_metadata?.account_type);
-  return { address, role, isNewUser: Boolean(verify.payload.isNewUser) };
+  const normalizedRole = normalizeUserRole(data.user?.user_metadata?.account_type);
+  return { address, role: normalizedRole, isNewUser: Boolean(verify.payload.isNewUser) };
 }
 
 /** Map backend SIWS error codes to friendly, actionable messages. */

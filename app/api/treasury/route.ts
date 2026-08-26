@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 export interface DistributionHistoryItem {
   id: number;
@@ -56,12 +57,18 @@ const mockTreasuryState: TreasuryMetrics = {
   ],
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const rateLimited = await enforceRouteRateLimit(request);
+  if (rateLimited) return rateLimited;
+
   return NextResponse.json(mockTreasuryState, { status: 200 });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const rateLimited = await enforceRouteRateLimit(request);
+    if (rateLimited) return rateLimited;
+
     const body = await request.json();
     const { action, amount } = body;
 

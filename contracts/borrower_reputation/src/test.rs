@@ -466,3 +466,31 @@ fn test_rep_multiple_signers_independently() {
     client.pause(&signer1);
     assert!(client.is_paused());
 }
+
+#[test]
+fn test_zk_tier_upgrade_success() {
+    let (env, contract_id, admin, borrower) = setup();
+    let client = BorrowerReputationContractClient::new(&env, &contract_id);
+
+    let verifier = Address::generate(&env);
+    client.set_zk_verifier(&admin, &verifier);
+    assert_eq!(client.get_zk_verifier(), verifier);
+
+    let nullifier = BytesN::from_array(&env, &[88u8; 32]);
+    client.apply_zk_tier_upgrade(&verifier, &borrower, &3, &nullifier);
+
+    let profile = client.get_profile(&borrower);
+    assert_eq!(profile.reputation_tier, ReputationTier::Gold);
+    assert_eq!(profile.reputation_score, 500);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorised: caller is neither admin nor registered ZK verifier")]
+fn test_zk_tier_upgrade_unauthorized_panics() {
+    let (env, contract_id, _admin, borrower) = setup();
+    let client = BorrowerReputationContractClient::new(&env, &contract_id);
+
+    let random_caller = Address::generate(&env);
+    let nullifier = BytesN::from_array(&env, &[99u8; 32]);
+    client.apply_zk_tier_upgrade(&random_caller, &borrower, &2, &nullifier);
+}
