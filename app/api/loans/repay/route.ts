@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { enforceRouteRateLimit } from "@/lib/rate-limit";
 import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
+import { getLoanLenders } from "@/lib/loans/lenders";
+import { splitRepaymentAcrossLenders } from "@/lib/loans/funding";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 interface RepayPayload {
@@ -58,22 +60,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "This transaction hash has already been recorded" }, { status: 409 });
     }
 
-    // Figure out the lender to notify them
-    const { data: fundTx } = await srClient
-      .from("ledger_transactions")
-      .select("user_id, metadata")
-      .eq("ref_type", "loan_fund")
-      .eq("ref_id", loanId)
-      .maybeSingle();
-      
-    const lenderUserId = fundTx?.user_id || "";
-    let lenderAddress = "";
-    if (fundTx && fundTx.metadata) {
-       try {
-         const meta = typeof fundTx.metadata === "string" ? JSON.parse(fundTx.metadata) : fundTx.metadata;
-         lenderAddress = meta.lenderAddress ?? "";
-       } catch { /* ignore */ }
-    }
+    // Figure out every lender to notify. A loan can be funded by several
+    // lenders (Issue #269), each owed a pro-rata slice of this repayment.
+    const lenders = await getLoanLenders(srClient, loanId);
+    const primaryLender = lenders[0];
+    const lenderUserId = primaryLender?.lenderId ?? "";
+    const lenderAddress = primaryLender?.address ?? "";
+    const lenderPayouts = splitRepaymentAcrossLenders(amount, lenders);
 
     // Create repayment record in DB
     const { data: repayment, error: repaymentError } = await srClient
@@ -132,6 +125,14 @@ export async function POST(request: NextRequest) {
         borrowerAddress,
         lenderAddress,
         lenderUserId,
+        // Full pro-rata breakdown so each lender's share of this repayment is
+        // auditable after the fact (Issue #269).
+        lenderPayouts: lenderPayouts.map((entry) => ({
+          lenderUserId: entry.lenderId,
+          address: entry.address,
+          share: +entry.share.toFixed(7),
+          payout: entry.payout,
+        })),
         loanId,
         repaymentId: repayment.id,
         principalAmount: loan.principal_amount,
@@ -159,11 +160,17 @@ export async function POST(request: NextRequest) {
       type: "loan_repaid",
     });
 
-    if (lenderUserId) {
+    // Notify every lender with the slice that reached them.
+    for (const entry of lenderPayouts) {
+      if (!entry.lenderId) continue;
+
       await createNotification({
-        userId: lenderUserId,
+        userId: entry.lenderId,
         title: "Loan Repayment Received",
-        message: `The borrower has repaid ${amount.toFixed(2)} XLM towards their loan on-chain!`,
+        message:
+          lenderPayouts.length > 1
+            ? `The borrower repaid ${amount.toFixed(2)} XLM on-chain. Your share (${(entry.share * 100).toFixed(1)}% of this loan) is ${entry.payout.toFixed(2)} XLM.`
+            : `The borrower has repaid ${amount.toFixed(2)} XLM towards their loan on-chain!`,
         type: "loan_repaid",
       });
     }

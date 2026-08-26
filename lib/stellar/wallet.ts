@@ -4,10 +4,11 @@ import { StellarWalletsKit } from "@creit.tech/stellar-wallets-kit";
 import { FreighterModule } from "@creit.tech/stellar-wallets-kit/modules/freighter";
 import { AlbedoModule } from "@creit.tech/stellar-wallets-kit/modules/albedo";
 import { WalletConnectModule } from "@creit.tech/stellar-wallets-kit/modules/wallet-connect";
+import { xBullModule } from "@creit.tech/stellar-wallets-kit/modules/xbull";
 // The kit expects its own Networks enum for some methods, which has identical values to stellar-sdk
 import { Networks as KitNetworks } from "@creit.tech/stellar-wallets-kit/types";
 
-export type StellarWalletProvider = "freighter" | "albedo" | "walletconnect";
+export type StellarWalletProvider = "freighter" | "albedo" | "walletconnect" | "xbull";
 
 export interface ConnectedWallet {
   provider: StellarWalletProvider;
@@ -27,15 +28,17 @@ const WALLET_ADDRESS_STORAGE_KEY = "wallet_address";
 export function getWalletProviderLabel(provider: StellarWalletProvider): string {
   if (provider === "albedo") return "Albedo";
   if (provider === "walletconnect") return "WalletConnect";
+  if (provider === "xbull") return "xBull";
   return "Freighter";
 }
 
-export function getStoredWalletProvider(): StellarWalletProvider {
-  if (typeof window === "undefined") return "freighter";
+export function getStoredWalletProvider(): StellarWalletProvider | null {
+  if (typeof window === "undefined") return null;
   const stored = window.localStorage.getItem(WALLET_PROVIDER_STORAGE_KEY);
-  if (stored === "albedo") return "albedo";
-  if (stored === "walletconnect") return "walletconnect";
-  return "freighter";
+  if (stored === "albedo" || stored === "walletconnect" || stored === "xbull" || stored === "freighter") {
+    return stored as StellarWalletProvider;
+  }
+  return null;
 }
 
 export function setStoredWalletProvider(provider: StellarWalletProvider | null) {
@@ -62,6 +65,7 @@ function ensureKit(): void {
       modules: [
         new FreighterModule(),
         new AlbedoModule(),
+        new xBullModule(),
         new WalletConnectModule({
           projectId,
           metadata: {
@@ -82,32 +86,51 @@ function mapProviderToModuleId(provider: StellarWalletProvider): string {
     case "freighter": return "freighter";
     case "albedo": return "albedo";
     case "walletconnect": return "walletconnect"; 
+    case "xbull": return "xbull";
   }
 }
 
-export async function connectWallet(provider: StellarWalletProvider): Promise<ConnectedWallet> {
+export async function connectWallet(provider?: StellarWalletProvider | null): Promise<ConnectedWallet> {
   ensureKit();
-  const moduleId = mapProviderToModuleId(provider);
   
-  // Actually, some modules might have specific IDs in the kit.
-  // The module ids are typically "freighter", "albedo", "walletconnect"
-  
-  StellarWalletsKit.setWallet(moduleId);
-  
-  const { address } = await StellarWalletsKit.getAddress();
-  
-  if (!address) {
-    throw new Error(`Failed to get address from ${getWalletProviderLabel(provider)}.`);
-  }
+  if (provider) {
+    const moduleId = mapProviderToModuleId(provider);
+    StellarWalletsKit.setWallet(moduleId);
+    
+    const { address } = await StellarWalletsKit.getAddress();
+    
+    if (!address) {
+      throw new Error(`Failed to get address from ${getWalletProviderLabel(provider)}.`);
+    }
 
-  setStoredWalletProvider(provider);
-  return { provider, address };
+    setStoredWalletProvider(provider);
+    window.localStorage.setItem(WALLET_ADDRESS_STORAGE_KEY, address);
+    return { provider, address };
+  } else {
+    // If no provider specified, let the user choose via the kit's modal
+    const result = await StellarWalletsKit.authModal();
+    if (!result || !result.address) {
+      throw new Error("Wallet connection was cancelled or failed.");
+    }
+    
+    // The kit sets the selected module after authModal finishes successfully
+    let selectedProvider: StellarWalletProvider = "freighter"; // fallback
+    try {
+      selectedProvider = StellarWalletsKit.selectedModule?.productId as StellarWalletProvider;
+    } catch (e) {
+      // Ignore if selectedModule getter throws
+    }
+    
+    setStoredWalletProvider(selectedProvider);
+    window.localStorage.setItem(WALLET_ADDRESS_STORAGE_KEY, result.address);
+    return { provider: selectedProvider, address: result.address };
+  }
 }
 
 export async function getConnectedWallet(provider?: StellarWalletProvider): Promise<ConnectedWallet> {
   const selectedProvider = provider ?? getStoredWalletProvider();
   
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && selectedProvider) {
     const storedAddress = window.localStorage.getItem(WALLET_ADDRESS_STORAGE_KEY);
     if (storedAddress) {
        // Just silently set the kit's active module
@@ -121,7 +144,7 @@ export async function getConnectedWallet(provider?: StellarWalletProvider): Prom
     }
   }
 
-  // If no stored address, attempt to connect
+  // If no stored address or no selected provider, attempt to connect (will show modal if selectedProvider is null)
   return connectWallet(selectedProvider);
 }
 
@@ -138,7 +161,9 @@ export async function signTransactionWithWallet({
   const selectedProvider = provider ?? getStoredWalletProvider();
   ensureKit();
   
-  StellarWalletsKit.setWallet(mapProviderToModuleId(selectedProvider));
+  if (selectedProvider) {
+    StellarWalletsKit.setWallet(mapProviderToModuleId(selectedProvider));
+  }
 
   // The kit expects options to be passed
   const { signedTxXdr, signerAddress } = await StellarWalletsKit.signTransaction(xdr, {
@@ -149,6 +174,6 @@ export async function signTransactionWithWallet({
   return {
     signedTxXdr,
     signerAddress,
-    provider: selectedProvider,
+    provider: selectedProvider || ("freighter" as StellarWalletProvider),
   };
 }

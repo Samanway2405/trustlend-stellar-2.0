@@ -6,6 +6,7 @@ import {
   presentLenderMetrics,
 } from "@/lib/dashboard/metrics";
 import { lenderNavLinks } from "@/lib/dashboard/lender-links";
+import { getFundingProgress } from "@/lib/loans/funding";
 import {
   buildStellarTxVerificationUrl,
   isLikelyTxHash,
@@ -28,6 +29,10 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 type MarketplaceLoanRow = {
   id: string;
   principal_amount: number;
+  /** Total contributed by all lenders so far (Issue #269). */
+  funded_amount?: number;
+  /** Lenders who already hold a slice of this loan. */
+  lender_count?: number;
   apr_bps: number;
   duration_days: number;
   borrower_id: string;
@@ -86,7 +91,9 @@ export default async function LenderMarketplacePage({
   } else if (srClient) {
     const fallbackLoansRes = await srClient
       .from("loans")
-      .select("id, principal_amount, apr_bps, duration_days, borrower_id")
+      .select(
+        "id, principal_amount, funded_amount, apr_bps, duration_days, borrower_id",
+      )
       .in("status", ["requested", "approved"])
       .order(
         sort === "term_asc" || sort === "term_desc"
@@ -131,6 +138,7 @@ export default async function LenderMarketplacePage({
       return {
         id: String(loan.id),
         principal_amount: Number(loan.principal_amount ?? 0),
+        funded_amount: Number(loan.funded_amount ?? 0),
         apr_bps: Number(loan.apr_bps ?? 0),
         duration_days: Number(loan.duration_days ?? 30),
         borrower_id: borrowerId,
@@ -145,17 +153,23 @@ export default async function LenderMarketplacePage({
   }
 
   const fundedTxs = fundedTxsRes.data ?? [];
-  const marketplaceLoans = openLoans.map((loan) => ({
-    id: String(loan.id),
-    principal_amount: Number(loan.principal_amount ?? 0),
-    apr_bps: Number(loan.apr_bps ?? 0),
-    duration_days: Number(loan.duration_days ?? 30),
-    trust_score: Number(loan.trust_score ?? 250),
-    borrower_name: String(
-      loan.borrower_name ?? `Borrower ${String(loan.borrower_id).slice(0, 6)}`,
-    ),
-    borrower_wallet: String(loan.borrower_wallet ?? ""),
-  }));
+  const marketplaceLoans = openLoans
+    .map((loan) => ({
+      id: String(loan.id),
+      principal_amount: Number(loan.principal_amount ?? 0),
+      funded_amount: Number(loan.funded_amount ?? 0),
+      lender_count: Number(loan.lender_count ?? 0),
+      apr_bps: Number(loan.apr_bps ?? 0),
+      duration_days: Number(loan.duration_days ?? 30),
+      trust_score: Number(loan.trust_score ?? 250),
+      borrower_name: String(
+        loan.borrower_name ?? `Borrower ${String(loan.borrower_id).slice(0, 6)}`,
+      ),
+      borrower_wallet: String(loan.borrower_wallet ?? ""),
+    }))
+    // Drop anything already at 100%. The RPC filters these out server-side, but
+    // the fallback query cannot compare two columns, so enforce it here too.
+    .filter((loan) => !getFundingProgress(loan.principal_amount, loan.funded_amount).isFullyFunded);
 
   const visibleMarketplaceLoans = filterMarketplaceLoans(marketplaceLoans, {
     sort,

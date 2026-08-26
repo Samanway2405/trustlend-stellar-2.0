@@ -60,6 +60,6 @@ jobs:
           files: ./contracts/coverage/cobertura.xml
           flags: rust-contracts
           name: tarpaulin-rust-contracts
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}

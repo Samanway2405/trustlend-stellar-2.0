@@ -44,11 +44,22 @@ next-env.d.ts
 # ── Rust / Soroban ───────────────────────────────────────────────────────────
 # Cargo build output
 contracts/target/
+contracts/mocks/target/
 # Compiled WASM artifacts 
 **/*.wasm
 # Generated Stellar CLI TypeScript bindings
 lib/contracts/generated/
-# Temp env file produced by deploy.sh (copy contents into .env.local)
+# Reference copy of the contract IDs produced by `npm run deploy:testnet`
+# (the deploy CLI writes them into .env.local directly)
 .env.contracts
+# Backup the deploy CLI takes before rewriting an existing env file
+*.env.local.bak
+.env.local.bak
+# Per-network deployment state used by `npm run deploy:testnet -- --resume`
+contracts/.deployments/
 
 /docs
+
+# playwright
+playwright-report/
+test-results/

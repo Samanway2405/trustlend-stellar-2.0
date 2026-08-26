@@ -4,10 +4,17 @@ members = [
     "escrow",
     "lending",
     "default_management",
+    "liquidation_auction",
     "governance",
     "multisig_admin",
     "auto_compound_vault",
     "treasury",
+    "tlend_token",
+    "tlend_vesting",
+    "tlend_airdrop",
+    "pooled_lending",
+    "borrower_loyalty",
+    "zk_credit_verifier",
 ]
 resolver = "2"
 
