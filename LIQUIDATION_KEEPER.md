@@ -1,6 +1,9 @@
 # Liquidation Keeper
 
-> Implements issue **#72 — Add automatic re-balancing script for lending pool liquidations**
+> Implements issues **#72 — automatic re-balancing script for lending pool
+> liquidations** and **#259 — automated liquidation bot for undercollateralized
+> loans** (background worker that monitors prices every minute and liquidates
+> automatically).
 
 `scripts/liquidation-keeper.ts` is an automated bot that finds under-collateralized
 loans and liquidates them on-chain before they become bad debt.
@@ -27,15 +30,42 @@ npm run liquidation:keeper                     # one-shot (cron)
 npm run liquidation:keeper -- --dry-run          # evaluate only
 npm run liquidation:keeper -- --source=chain
 npm run liquidation:keeper -- --interval=60      # background service
+npm run liquidation:keeper:service               # shorthand: poll every minute
 ```
 
 Config is documented in `.env.example` (`LIQUIDATION_*` section). Every step is
 individually error-handled — one bad loan never aborts the run — matching the
 `default-management` scheduler's conventions.
 
+## Deployment (issue #259)
+
+Two ways to run the keeper as a background worker that monitors every minute:
+
+1. **Vercel Cron (default deployment).** [`vercel.json`](vercel.json) schedules
+   `POST /api/cron/liquidation` every minute (`* * * * *`). The route
+   ([`app/api/cron/liquidation/route.ts`](app/api/cron/liquidation/route.ts))
+   authenticates the caller with `Bearer ${CRON_SECRET}` (same scheme as the
+   `payment-due` / `default-management` crons), loads the keeper config from env,
+   runs a full scan, and returns the per-run summary. Every-minute schedules
+   require a Vercel Pro plan; on Hobby, run the self-hosted variant below (or an
+   external cron) instead.
+2. **Self-hosted service.** `npm run liquidation:keeper:service` runs
+   `scripts/liquidation-keeper.ts --interval=60` — a long-lived loop that rescans
+   prices and liquidates every 60 seconds. Wrap it in Docker/systemd/PM2 on any
+   always-on host. One-shot cron invocations (item 1 of [Usage](#usage)) remain
+   supported for schedulers with coarser granularity.
+
+Either way, `ADMIN_SECRET_KEY` is the real control: the on-chain
+`mark_defaulted` call `require_auth()`s the admin address, so a leaked cron URL
+cannot liquidate anything without the signing key.
+
 ## Tests
 
-`__tests__/scripts/liquidation-keeper.test.ts` — 25 tests covering the pure LTV/
-threshold math, alert delivery (incl. webhook failure isolation), CLI/env config
-parsing, and full run orchestration (liquidate, dry-run, healthy, skipped, failed,
-both `db` and `chain` sources).
+- `__tests__/scripts/liquidation-keeper.test.ts` — 27 tests covering the pure
+  LTV/threshold math, alert delivery (incl. webhook failure isolation), CLI/env
+  config parsing (incl. the every-minute 60s interval), and full run
+  orchestration (liquidate, dry-run, healthy, skipped, failed, both `db` and
+  `chain` sources).
+- `__tests__/api/cron/liquidation.test.ts` — 7 tests covering the cron route
+  (success, 401 on missing/wrong bearer, unset-secret dev mode, 500 on keeper
+  failure, GET alias) and the `vercel.json` `* * * * *` schedule.
