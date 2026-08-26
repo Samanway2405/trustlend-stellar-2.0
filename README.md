@@ -308,6 +308,71 @@ See the [complete setup guide →](GETTING_STARTED.md)
 
 ---
 
+## 🚀 Deploying Contracts to Testnet
+
+One command builds every Soroban contract, deploys it to the Stellar Testnet,
+initializes and wires the contracts together, and writes the resulting contract
+IDs straight into your `.env.local`:
+
+```bash
+npm run deploy:testnet
+```
+
+There is no prerequisite step: if the `trustlend-admin` identity does not exist
+yet, the CLI creates it and funds it from friendbot before deploying.
+
+Preview the whole run without touching the network or your files:
+
+```bash
+npm run deploy:testnet:dry
+```
+
+### What it writes
+
+Contract IDs land directly in `.env.local`. Keys already present are updated **in
+place** — your Supabase keys, API secrets and comments are left untouched, and a
+`.env.local.bak` is taken first. A reference copy also goes to `.env.contracts`.
+
+| Contract | Env key |
+| --- | --- |
+| Reputation | `NEXT_PUBLIC_REPUTATION_CONTRACT_ID` |
+| Escrow | `NEXT_PUBLIC_ESCROW_CONTRACT_ID` |
+| Lending | `NEXT_PUBLIC_LENDING_CONTRACT_ID` |
+| Default Management | `NEXT_PUBLIC_DEFAULT_CONTRACT_ID` |
+| Pooled Lending | `NEXT_PUBLIC_POOLED_LENDING_CONTRACT_ID` |
+| Governance | `NEXT_PUBLIC_GOVERNANCE_CONTRACT_ID` |
+| MultiSigAdmin | `NEXT_PUBLIC_MULTISIG_ADMIN_CONTRACT_ID` |
+| TLEND token / vesting / airdrop | `NEXT_PUBLIC_TLEND_*_CONTRACT_ID` |
+
+### Options
+
+```bash
+npm run deploy:testnet -- --help
+```
+
+| Flag | Purpose |
+| --- | --- |
+| `--only lending,escrow` | Deploy a subset (always in dependency order) |
+| `--resume` | Reuse IDs from the last run instead of redeploying |
+| `--skip-build` | Reuse the WASM already in `contracts/target` |
+| `--skip-init` / `--skip-bindings` | Skip initialization / TypeScript bindings |
+| `--env-file .env.staging` | Write to a different env file |
+| `--network futurenet` | Target another network |
+| `--dry-run` | Print every command without executing it |
+
+Contract IDs are recorded to `contracts/.deployments/<network>.json` after each
+individual deployment, so a run that fails partway can be picked up with
+`--resume` without paying to deploy the same contract twice.
+
+Optional environment overrides: `MULTISIG_SIGNERS`, `MULTISIG_THRESHOLD`,
+`ORACLE_ADDRESS`, `TLEND_TOTAL_SUPPLY`, `TLEND_AIRDROP_MERKLE_ROOT`.
+
+> The older `contracts/scripts/deploy.sh` / `deploy.ps1` still work but are
+> superseded: the CLI is cross-platform, handles key creation and funding, and
+> deploys the pooled-lending contract those scripts omitted.
+
+---
+
 <details>
 <summary><b>🧩 Smart Contracts & Deployment Details (Click to Expand)</b></summary>
 <br>

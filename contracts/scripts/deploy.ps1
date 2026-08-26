@@ -1,3 +1,17 @@
+# =============================================================================
+# SUPERSEDED by `npm run deploy:testnet` (issue #270).
+#
+# The Node CLI at scripts/deploy-testnet.ts is cross-platform, so this script
+# and deploy.sh no longer have to be kept in sync by hand. It also creates and
+# funds the admin key for you, deploys the pooled_lending contract this script
+# omits, and writes the contract IDs into .env.local directly.
+#
+#   npm run deploy:testnet            # deploy everything
+#   npm run deploy:testnet:dry        # preview without touching the network
+#   npm run deploy:testnet -- --help  # all options
+#
+# Kept for now so existing muscle memory and CI jobs keep working.
+# =============================================================================
 $ErrorActionPreference = "Stop"
 $NETWORK = "testnet"
 $ADMIN_KEY = "trustlend-admin"
