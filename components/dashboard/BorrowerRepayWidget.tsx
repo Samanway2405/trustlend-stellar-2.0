@@ -8,6 +8,10 @@ import {
   signTransactionWithWallet,
 } from "@/lib/stellar/wallet";
 import { formatCurrency, formatXlmPrecise } from "@/lib/utils/formatting";
+import {
+  splitRepaymentAcrossLenders,
+  type LenderContribution,
+} from "@/lib/loans/funding";
 
 interface RepayLoan {
   id: string;
@@ -246,6 +250,20 @@ export function BorrowerRepayWidget({
       if (!lenderAddress)
         throw new Error("Could not find lender wallet structure!");
 
+      // A loan may have been filled by several lenders (Issue #269); each is
+      // owed a slice of this repayment. Older responses carry only a single
+      // lenderAddress, so fall back to treating that as the sole contributor.
+      const lenderContributions: LenderContribution[] =
+        Array.isArray(prefData.lenders) && prefData.lenders.length > 0
+          ? prefData.lenders.map(
+              (entry: { address: string; lenderUserId?: string; contribution?: number }) => ({
+                lenderId: String(entry.lenderUserId ?? ""),
+                address: String(entry.address),
+                contribution: Number(entry.contribution ?? 0),
+              }),
+            )
+          : [{ lenderId: "", address: String(lenderAddress), contribution: 1 }];
+
       // 2. Wallet Connection
       setStep("connecting");
       const wallet = await getConnectedWallet();
@@ -276,37 +294,40 @@ export function BorrowerRepayWidget({
       const totalDueGross = prefData.breakdown.totalDue;
       const platformFee = prefData.breakdown.platformFee;
 
-      if (platformWallet && platformFee > 0 && totalDueGross > 0) {
-        // Splitting the payment proportionally based on what they are paying right now
-        const ratio = amount / totalDueGross;
-        const platformCut = +(platformFee * ratio).toFixed(7);
-        const lenderCut = +(amount - platformCut).toFixed(7);
+      // Work out what goes to the lenders vs. the platform, then split the
+      // lender portion pro-rata across everyone who funded the loan.
+      let lenderCut = amount;
+      let platformCut = 0;
 
-        if (lenderCut > 0) {
-          builder.addOperation(
-            Operation.payment({
-              destination: lenderAddress,
-              asset: Asset.native(),
-              amount: lenderCut.toFixed(7),
-            }),
-          );
-        }
-        if (platformCut > 0) {
-          builder.addOperation(
-            Operation.payment({
-              destination: platformWallet,
-              asset: Asset.native(),
-              amount: platformCut.toFixed(7),
-            }),
-          );
-        }
-      } else {
-        // Fallback: send directly to lender if no platform wallet configured
+      if (platformWallet && platformFee > 0 && totalDueGross > 0) {
+        // Split proportionally based on what they are paying right now
+        const ratio = amount / totalDueGross;
+        platformCut = +(platformFee * ratio).toFixed(7);
+        lenderCut = +(amount - platformCut).toFixed(7);
+      }
+
+      const payouts = splitRepaymentAcrossLenders(lenderCut, lenderContributions);
+
+      if (payouts.length === 0) {
+        throw new Error("Could not determine how to split this repayment.");
+      }
+
+      for (const payout of payouts) {
         builder.addOperation(
           Operation.payment({
-            destination: lenderAddress,
+            destination: payout.address,
             asset: Asset.native(),
-            amount: amount.toFixed(7),
+            amount: payout.payout.toFixed(7),
+          }),
+        );
+      }
+
+      if (platformCut > 0 && platformWallet) {
+        builder.addOperation(
+          Operation.payment({
+            destination: platformWallet,
+            asset: Asset.native(),
+            amount: platformCut.toFixed(7),
           }),
         );
       }

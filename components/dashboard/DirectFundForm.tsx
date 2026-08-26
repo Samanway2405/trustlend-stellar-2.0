@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   getConnectedWallet,
   getWalletProviderLabel,
   signTransactionWithWallet,
 } from "@/lib/stellar/wallet";
+import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
+import {
+  calculateLenderReturn,
+  getFundingProgress,
+  validateFundingAmount,
+} from "@/lib/loans/funding";
 
 interface OpenLoan {
   id: string;
   principal_amount: number;
+  /** Total already contributed by other lenders (Issue #269). */
+  funded_amount?: number;
+  lender_count?: number;
   apr_bps: number;
   duration_days: number;
   trust_score: number;
@@ -20,6 +29,17 @@ interface OpenLoan {
 interface DirectFundFormProps {
   loan: OpenLoan;
   onClose: () => void;
+}
+
+/**
+ * Format an amount for the funding input at Stellar's full 7-decimal precision,
+ * without trailing zeros.
+ *
+ * Rounding to 2 decimals here would make "Fund all" fall a fraction short of
+ * the remainder and leave the loan stuck just under 100%.
+ */
+function toStellarAmountInput(value: number): string {
+  return String(Number(value.toFixed(7)));
 }
 
 type Step =
@@ -49,19 +69,42 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
   const [errorMsg, setErrorMsg] = useState("");
   const [explorerUrl, setExplorerUrl] = useState("");
   const [activeWalletLabel, setActiveWalletLabel] = useState("wallet");
+  const [fundedFully, setFundedFully] = useState(false);
 
-  const interestXlm = (
-    (loan.principal_amount * (loan.apr_bps / 10000) * loan.duration_days) /
-    365
-  ).toFixed(4);
-
-  const totalReturn = (loan.principal_amount + parseFloat(interestXlm)).toFixed(
-    4,
+  const progress = useMemo(
+    () => getFundingProgress(loan.principal_amount, loan.funded_amount ?? 0),
+    [loan.principal_amount, loan.funded_amount],
   );
+
+  // Default to filling the loan outright; the lender can dial it down to take
+  // a smaller slice and leave the rest for others (Issue #269).
+  const [amountInput, setAmountInput] = useState(() =>
+    toStellarAmountInput(progress.remaining),
+  );
+
+  const validation = validateFundingAmount(amountInput, progress.remaining);
+  const contribution = validation.ok ? validation.amount : 0;
+  const { interest, total: totalReturn } = calculateLenderReturn(
+    contribution,
+    loan.apr_bps,
+    loan.duration_days,
+  );
+  const interestXlm = interest.toFixed(4);
+  const completesLoan =
+    validation.ok && contribution >= progress.remaining - 1e-6;
+
   const borrowerWallet = loan.borrower_wallet ?? "";
 
   const handleFund = async () => {
     setErrorMsg("");
+
+    // Re-validate at submit time: the input is free-form text.
+    if (!validation.ok) {
+      setErrorMsg(validation.error);
+      setStep("error");
+      return;
+    }
+
     setStep("connecting");
 
     try {
@@ -106,7 +149,7 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
           Operation.payment({
             destination: borrowerWallet,
             asset: Asset.native(),
-            amount: loan.principal_amount.toFixed(7),
+            amount: contribution.toFixed(7),
           }),
         )
         .addMemo(Memo.text(`TL-FUND:${loan.id.slice(0, 12)}`))
@@ -148,7 +191,12 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
       const apiRes = await fetch("/api/loans/fund", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loanId: loan.id, txHash, lenderAddress }),
+        body: JSON.stringify({
+          loanId: loan.id,
+          txHash,
+          lenderAddress,
+          amount: contribution,
+        }),
       });
 
       if (!apiRes.ok) {
@@ -158,6 +206,7 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
 
       const apiData = await apiRes.json();
       setExplorerUrl(apiData.explorerUrl ?? "");
+      setFundedFully(Boolean(apiData.isFullyFunded));
       setStep("done");
 
       setTimeout(() => {
@@ -202,7 +251,8 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
             gap: "0.6rem",
           }}
         >
-          <span style={{ fontSize: "1.5rem" }}>🛡️</span> Direct P2P Funding
+          <span style={{ fontSize: "1.5rem" }}>🛡️</span>{" "}
+          {progress.isPartiallyFunded ? "Top Up This Loan" : "Direct P2P Funding"}
         </h3>
         <span
           style={{
@@ -258,6 +308,13 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
                 XLM
               </span>
             </p>
+            <div style={{ marginTop: "0.6rem" }}>
+              <FundingProgressBar
+                principalAmount={loan.principal_amount}
+                fundedAmount={loan.funded_amount ?? 0}
+                lenderCount={loan.lender_count}
+              />
+            </div>
           </div>
           <div>
             <p
@@ -292,7 +349,7 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
                 fontWeight: 600,
               }}
             >
-              Interest Earned
+              Interest On Your Slice
             </p>
             <p
               style={{
@@ -318,7 +375,7 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
                 fontWeight: 600,
               }}
             >
-              Total Expected
+              Total Expected Back
             </p>
             <p
               style={{
@@ -328,9 +385,92 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
                 color: "#111",
               }}
             >
-              {totalReturn} XLM
+              {totalReturn.toFixed(4)} XLM
             </p>
           </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: "1.25rem",
+            paddingTop: "1rem",
+            borderTop: "1px dashed rgba(0,0,0,0.1)",
+          }}
+        >
+          <label
+            htmlFor={`fund-amount-${loan.id}`}
+            style={{
+              display: "block",
+              margin: "0 0 0.4rem 0",
+              fontSize: "0.75rem",
+              color: "rgba(0,0,0,0.5)",
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
+          >
+            Amount You Are Funding
+          </label>
+
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              id={`fund-amount-${loan.id}`}
+              type="number"
+              min="0"
+              max={progress.remaining}
+              step="0.01"
+              inputMode="decimal"
+              value={amountInput}
+              disabled={step !== "idle" && step !== "error"}
+              onChange={(event) => setAmountInput(event.target.value)}
+              aria-invalid={!validation.ok}
+              aria-describedby={`fund-amount-help-${loan.id}`}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: "0.6rem 0.75rem",
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "#111",
+                background: "#fff",
+                border: `1px solid ${validation.ok ? "rgba(126,47,208,0.25)" : "#e03e3e"}`,
+                borderRadius: "0.5rem",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setAmountInput(toStellarAmountInput(progress.remaining))}
+              disabled={step !== "idle" && step !== "error"}
+              style={{
+                padding: "0.6rem 0.9rem",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                color: "#7e2fd0",
+                background: "rgba(126,47,208,0.08)",
+                border: "1px solid rgba(126,47,208,0.25)",
+                borderRadius: "0.5rem",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Fund all
+            </button>
+          </div>
+
+          <p
+            id={`fund-amount-help-${loan.id}`}
+            style={{
+              margin: "0.4rem 0 0",
+              fontSize: "0.75rem",
+              lineHeight: 1.45,
+              color: validation.ok ? "rgba(0,0,0,0.55)" : "#e03e3e",
+            }}
+          >
+            {!validation.ok
+              ? validation.error
+              : completesLoan
+                ? `This completes the loan — it activates immediately at 100% funded.`
+                : `You can fund up to ${progress.remaining.toFixed(2)} XLM. Other lenders can cover the rest; the loan activates only once it reaches 100%.`}
+          </p>
         </div>
 
         <div
@@ -437,7 +577,7 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
         >
           <div style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>🎉</div>
           <p style={{ margin: 0, color: "#20bd8e", fontWeight: 700 }}>
-            Transaction Confirmed!
+            {fundedFully ? "Loan Fully Funded!" : "Contribution Confirmed!"}
           </p>
           <p
             style={{
@@ -446,7 +586,10 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
               fontSize: "0.8rem",
             }}
           >
-            {loan.principal_amount} XLM has been sent on-chain.
+            {contribution.toFixed(2)} XLM has been sent on-chain.{" "}
+            {fundedFully
+              ? "The loan is now active."
+              : "The loan stays open until it reaches 100%."}
           </p>
           {explorerUrl && (
             <a
@@ -506,7 +649,7 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
       >
         <button
           onClick={handleFund}
-          disabled={step !== "idle" && step !== "error"}
+          disabled={(step !== "idle" && step !== "error") || !validation.ok}
           className="workspace-button workspace-button--primary"
           style={{
             flex: 2,
@@ -518,8 +661,11 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
             boxShadow: "0 4px 15px rgba(126, 47, 208, 0.25)",
             border: "none",
             borderRadius: "0.5rem",
+            opacity: validation.ok ? 1 : 0.55,
             cursor:
-              step !== "idle" && step !== "error" ? "not-allowed" : "pointer",
+              (step !== "idle" && step !== "error") || !validation.ok
+                ? "not-allowed"
+                : "pointer",
           }}
         >
           {step === "signing"
@@ -530,7 +676,9 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
                 ? "Try Again"
                 : step !== "idle"
                   ? "Processing..."
-                  : `Confirm & Send ${loan.principal_amount} XLM`}
+                  : validation.ok
+                    ? `Confirm & Send ${contribution.toFixed(2)} XLM`
+                    : "Enter a valid amount"}
         </button>
         <button
           onClick={onClose}

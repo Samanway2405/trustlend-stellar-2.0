@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { getBorrowerDashboardMetrics, presentBorrowerMetrics } from "@/lib/dashboard/metrics";
 import { borrowerNavLinks } from "@/lib/dashboard/borrower-links";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { getFundingProgress } from "@/lib/loans/funding";
 
 export default async function BorrowerLoansPage() {
   const { user } = await requireAuthenticatedUser("borrower");
@@ -14,7 +15,7 @@ export default async function BorrowerLoansPage() {
     ? await Promise.all([
         supabase
           .from("loans")
-          .select("id, status, principal_amount, apr_bps, duration_days, repaid_amount, due_at, created_at")
+          .select("id, status, principal_amount, funded_amount, apr_bps, duration_days, repaid_amount, due_at, created_at")
           .eq("borrower_id", user.id)
           .order("created_at", { ascending: false })
           .limit(20),
@@ -29,20 +30,16 @@ export default async function BorrowerLoansPage() {
   const loans   = loansRes.data ?? [];
   const profile = profileRes.data;
 
-  const loanIds = loans.map((l) => String(l.id));
-  const fundedLedgerRes = supabase && loanIds.length > 0
-    ? await supabase
-        .from("ledger_transactions")
-        .select("ref_id")
-        .eq("ref_type", "loan_fund")
-        .in("ref_id", loanIds)
-    : { data: [] };
-
-  const fundedLoanIds = new Set((fundedLedgerRes.data ?? []).map((row) => String(row.ref_id)));
+  // Funding progress drives the status shown to the borrower (Issue #269).
+  // A request is only "funded" once contributions cover the full principal —
+  // a partially filled loan stays "requested" and is NOT repayable yet.
   const normalizedLoans = loans.map((loan) => {
     const status = String(loan.status ?? "requested");
-    const effectiveStatus = status === "requested" && fundedLoanIds.has(String(loan.id)) ? "funded" : status;
-    return { ...loan, status: effectiveStatus };
+    const progress = getFundingProgress(loan.principal_amount, loan.funded_amount);
+    const effectiveStatus =
+      status === "requested" && progress.isFullyFunded ? "funded" : status;
+
+    return { ...loan, status: effectiveStatus, funded_amount: progress.funded };
   });
 
   const isKycVerified = profile?.kyc_status === "verified";
@@ -86,7 +83,7 @@ export default async function BorrowerLoansPage() {
         <BorrowerForms
           canApplyLoan={canApplyLoan}
           maxLoanAmount={maxLoanAmount}
-          loans={normalizedLoans as { id: string; status: string; due_at: string | null; principal_amount: number; repaid_amount: number; apr_bps?: number; duration_days?: number; created_at?: string | null; }[]}
+          loans={normalizedLoans as { id: string; status: string; due_at: string | null; principal_amount: number; funded_amount?: number; repaid_amount: number; apr_bps?: number; duration_days?: number; created_at?: string | null; }[]}
           selectedRepaymentLoan={repayableLoan as { id: string; status: string; due_at: string | null; principal_amount: number; repaid_amount: number } | null}
           dueAmount={dueAmount}
         />

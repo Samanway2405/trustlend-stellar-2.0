@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { enforceRouteRateLimit } from "@/lib/rate-limit";
 import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
+import { getLoanLenders } from "@/lib/loans/lenders";
+import { MAX_LENDERS_PER_REPAYMENT } from "@/lib/loans/funding";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 /**
@@ -38,28 +40,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Loan is not in a repayable state" }, { status: 400 });
     }
 
-    // Find lender wallet from the ledger (the wallet that funded this loan)
-    // Use service role client to bypass RLS, because this transaction was minted by the lender.
-    const { data: fundTx } = await srClient
-      .from("ledger_transactions")
-      .select("metadata, user_id")
-      .eq("ref_type", "loan_fund")
-      .eq("ref_id", loanId)
-      .maybeSingle();
+    // Find every lender who funded this loan. A loan can be filled by several
+    // lenders (Issue #269), so repayment is split pro-rata across all of them.
+    // Service role client: contributions belong to lenders and are not readable
+    // by the borrower under RLS.
+    const lenders = await getLoanLenders(srClient, loanId);
 
-    let lenderAddress = "";
-    let lenderUserId  = "";
-    if (fundTx && fundTx.metadata) {
-      try {
-        const meta = typeof fundTx.metadata === "string" ? JSON.parse(fundTx.metadata) : fundTx.metadata;
-        lenderAddress = String(meta.lenderAddress ?? "");
-        lenderUserId  = String(fundTx.user_id ?? meta.lenderUserId ?? "");
-      } catch { /* ignore */ }
-    }
-
-    if (!lenderAddress) {
+    if (lenders.length === 0) {
       return NextResponse.json({ error: "Lender wallet not found for this loan. Cannot process on-chain repayment." }, { status: 422 });
     }
+
+    if (lenders.length > MAX_LENDERS_PER_REPAYMENT) {
+      return NextResponse.json(
+        {
+          error: `This loan has ${lenders.length} lenders, more than a single Stellar transaction can pay out. Contact support to settle it in batches.`,
+        },
+        { status: 422 }
+      );
+    }
+
+    // Largest contributor, kept for backwards compatibility with clients that
+    // still read a single `lenderAddress`.
+    const primaryLender = lenders[0];
 
     // --- Interest & fee calculation ---
     // Interest = principal × (apr_bps/10000) × (duration_days/365)   [pro-rated APR]
@@ -77,10 +79,20 @@ export async function GET(request: NextRequest) {
     // Platform wallet (set in env, or use a default treasury address for testnet)
     const platformWallet  = process.env.PLATFORM_FEE_WALLET ?? "";
 
+    const totalContributed = lenders.reduce((sum, entry) => sum + entry.contribution, 0);
+
     return NextResponse.json({
       loanId,
-      lenderAddress,
-      lenderUserId,
+      lenderAddress: primaryLender.address,
+      lenderUserId: primaryLender.lenderId,
+      // Every lender and the fraction of the loan each funded. Clients build
+      // one payment operation per entry.
+      lenders: lenders.map((entry) => ({
+        address: entry.address,
+        lenderUserId: entry.lenderId,
+        contribution: +entry.contribution.toFixed(7),
+        share: totalContributed > 0 ? +(entry.contribution / totalContributed).toFixed(7) : 0,
+      })),
       borrowerAddress: user.user_metadata?.wallet_address ?? "",
       breakdown: {
         principal:       +principal.toFixed(7),

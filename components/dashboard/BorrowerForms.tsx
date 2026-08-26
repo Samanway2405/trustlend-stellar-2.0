@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatTokenBalance } from "@/lib/utils/formatting";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
 import {
   LendingContract,
   ReputationContract,
@@ -306,6 +307,8 @@ interface BorrowerLoan {
   status: string;
   due_at: string | null;
   principal_amount: number;
+  /** Total lenders have contributed so far (Issue #269). */
+  funded_amount?: number;
   repaid_amount: number;
   apr_bps?: number;
   duration_days?: number;
@@ -432,6 +435,7 @@ export function BorrowerForms({
           <h2 className="workspace-card-title">Pending Loan Request{pendingLoans.length > 1 ? "s" : ""}</h2>
           <p className="workspace-card-copy" style={{ marginTop: "0.35rem" }}>
             Your submitted request{pendingLoans.length > 1 ? "s are" : " is"} waiting for lender funding.
+            Several lenders can each fund a slice — the loan activates once it reaches 100%.
           </p>
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
             {pendingLoans.slice(0, 3).map((loan) => (
@@ -455,9 +459,18 @@ export function BorrowerForms({
                     Requested {loan.created_at ? new Date(String(loan.created_at)).toLocaleDateString() : "recently"}
                   </p>
                 </div>
+                <div style={{ flex: "1 1 12rem", minWidth: "10rem" }}>
+                  <FundingProgressBar
+                    principalAmount={loan.principal_amount}
+                    fundedAmount={loan.funded_amount ?? 0}
+                  />
+                </div>
+
                 <div style={{ textAlign: "right" }}>
                   <p style={{ margin: 0, fontWeight: 800, color: "#7e2fd0" }}>{formatTokenBalance(Number(loan.principal_amount ?? 0))}</p>
-                  <p style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, margin: "0.15rem 0 0" }}>REQUESTED</p>
+                  <p style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, margin: "0.15rem 0 0" }}>
+                    {Number(loan.funded_amount ?? 0) > 0 ? "PARTIALLY FUNDED" : "REQUESTED"}
+                  </p>
                 </div>
               </div>
             ))}
