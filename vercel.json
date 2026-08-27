@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/liquidation",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/price-oracle",
+      "schedule": "* * * * *"
     }
   ]
 }
