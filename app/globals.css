@@ -3919,3 +3919,104 @@ a {
     transform: rotate(-90deg);
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Glossary term tooltips (Issue #264)
+   Small "i" affordance placed next to financial acronyms (APR, APY, LTV…).
+   The trigger is a real button so it is keyboard reachable; Radix opens the
+   tooltip on both hover and focus.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.term-tooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  vertical-align: middle;
+  /* Never let the affordance stretch a table header or inherit its casing. */
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.term-tooltip__label {
+  font: inherit;
+  color: inherit;
+}
+
+.term-tooltip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(122, 138, 177, 0.5);
+  background: transparent;
+  color: #7a86a8;
+  /* Fixed metrics so the icon stays legible next to 0.65rem uppercase labels. */
+  font-size: 9px;
+  font-weight: 800;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.term-tooltip__trigger:hover,
+.term-tooltip__trigger:focus-visible {
+  border-color: #7e2fd0;
+  color: #7e2fd0;
+  background: rgba(126, 47, 208, 0.08);
+}
+
+/* Keyboard users must get a clearly visible ring, not just the colour shift. */
+.term-tooltip__trigger:focus-visible {
+  outline: 2px solid #7e2fd0;
+  outline-offset: 2px;
+}
+
+.dark .term-tooltip__trigger {
+  border-color: rgba(160, 167, 197, 0.4);
+  color: #a0a7c5;
+}
+
+.dark .term-tooltip__trigger:hover,
+.dark .term-tooltip__trigger:focus-visible {
+  border-color: #a78bfa;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.dark .term-tooltip__trigger:focus-visible {
+  outline-color: #a78bfa;
+}
+
+/* Tooltip body: title on its own line above the explanation. */
+.term-tooltip__content {
+  display: block;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+.term-tooltip__content-title {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #c4a7fb;
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+.term-tooltip__content-body {
+  display: block;
+  color: #e6e8f0;
+  font-weight: 400;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .term-tooltip__trigger {
+    transition: none;
+  }
+}

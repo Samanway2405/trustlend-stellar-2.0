@@ -102,7 +102,12 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
       </div>
 
       <div>
-        <label className="workspace-label">Collateral Amount</label>
+        {/* The tooltip button sits beside the label, not inside it — a <label>
+            must not contain another interactive control. */}
+        <span className="term-tooltip">
+          <label className="workspace-label">Collateral Amount</label>
+          <TermTooltip term="LTV" side="top" />
+        </span>
         <input
           type="number"
           step="0.01"

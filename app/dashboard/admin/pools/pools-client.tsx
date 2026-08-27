@@ -9,6 +9,7 @@ import {
   runAutoMatch,
 } from "@/app/actions/admin-pools";
 import { formatCurrency } from "@/lib/utils/formatting";
+import { TermTooltip } from "@/components/ui/TermTooltip";
 
 interface Pool {
   id: string;
@@ -104,8 +105,16 @@ function CreatePoolForm({ onCreated }: { onCreated: () => void }) {
               />
             </div>
             <div>
-              <label className="workspace-label">APR (basis points) *</label>
+              {/* Tooltip buttons sit beside the label, not inside it — a
+                  <label> must not contain another interactive control. */}
+              <span className="term-tooltip">
+                <label className="workspace-label" htmlFor="pool-apr-bps">
+                  APR (basis points) *
+                </label>
+                <TermTooltip term="BASIS_POINTS" side="top" />
+              </span>
               <input
+                id="pool-apr-bps"
                 name="apr_bps"
                 type="number"
                 required

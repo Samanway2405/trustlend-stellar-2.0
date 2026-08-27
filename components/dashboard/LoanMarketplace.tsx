@@ -3,6 +3,7 @@
 import { Fragment, useState } from "react";
 import { DirectFundForm } from "./DirectFundForm";
 import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
+import { TermTooltip } from "@/components/ui/TermTooltip";
 import { getFundingProgress } from "@/lib/loans/funding";
 
 interface MarketplaceLoan {
@@ -90,10 +91,20 @@ export function LoanMarketplace({
           <tr>
             <th>Loan ID</th>
             <th>Borrower</th>
-            <th>Trust Score</th>
+            <th>
+              <span className="term-tooltip">
+                Trust Score
+                <TermTooltip term="TRUST_SCORE" side="top" />
+              </span>
+            </th>
             <th>Amount</th>
             <th>Funding Progress</th>
-            <th>APR</th>
+            <th>
+              <span className="term-tooltip">
+                APR
+                <TermTooltip term="APR" side="top" />
+              </span>
+            </th>
             <th>Duration</th>
             <th>Est. Return (max)</th>
             <th>Action</th>

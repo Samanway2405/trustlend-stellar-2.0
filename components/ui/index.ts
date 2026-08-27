@@ -17,3 +17,5 @@ export {
   DashboardChartsSkeleton,
 } from "@/components/dashboard/ChartSkeleton";
 export { ToastProvider, useToast, type Toast, type ToastType } from "./ToastContext";
+export { Tooltip } from "./Tooltip";
+export { TermTooltip } from "./TermTooltip";
