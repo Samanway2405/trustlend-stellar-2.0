@@ -143,4 +143,5 @@ export const footerLinks: FooterLink[] = [
   { label: "Journey", href: "#journey" },
   { label: "P2P", href: "#p2p" },
   { label: "FAQ", href: "#faq" },
+  { label: "Borrowing Guide", href: "/docs/borrowing" },
 ];

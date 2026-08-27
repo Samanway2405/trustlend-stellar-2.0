@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Borrowing user guide and FAQ at `/docs/borrowing`, covering the step-by-step
+  borrowing process, how the liquidation threshold is calculated, Health Factor
+  bands, and 15 frequently asked questions. Linked from the borrower dashboard
+  nav and the landing footer (#265).
 - Keyboard-accessible glossary tooltips for financial acronyms (APR, APY, LTV,
   Trust Score, Health Factor, basis points) across the borrower, lender and
   admin dashboards, backed by a shared `lib/glossary` definition list (#264).
