@@ -15,8 +15,14 @@ import {
   getServerSupabaseClient,
   getServiceRoleClient,
 } from "@/lib/supabase/server";
-
-type MarketplaceSortOption = "apr_desc" | "apr_asc" | "term_desc" | "term_asc";
+import {
+  DEFAULT_SORT,
+  DURATION_FILTER_OPTIONS,
+  HIGH_REPUTATION_THRESHOLD,
+  filterMarketplaceLoans,
+  parseDurationFilter,
+  parseSortOption,
+} from "@/lib/dashboard/marketplace";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -35,45 +41,12 @@ type MarketplaceLoanRow = {
   trust_score: number;
 };
 
-const DEFAULT_SORT: MarketplaceSortOption = "apr_desc";
-const HIGH_REPUTATION_THRESHOLD = 500;
-
 function readSearchParam(
   params: Record<string, string | string[] | undefined>,
   key: string,
 ) {
   const value = params[key];
   return Array.isArray(value) ? value[0] : value;
-}
-
-function parseSortOption(value: string | undefined): MarketplaceSortOption {
-  switch (value) {
-    case "apr_asc":
-    case "term_desc":
-    case "term_asc":
-      return value;
-    case "apr_desc":
-    default:
-      return DEFAULT_SORT;
-  }
-}
-
-function sortMarketplaceLoans<
-  T extends { apr_bps: number; duration_days: number },
->(loans: T[], sort: MarketplaceSortOption) {
-  return [...loans].sort((left, right) => {
-    switch (sort) {
-      case "apr_asc":
-        return left.apr_bps - right.apr_bps;
-      case "term_desc":
-        return right.duration_days - left.duration_days;
-      case "term_asc":
-        return left.duration_days - right.duration_days;
-      case "apr_desc":
-      default:
-        return right.apr_bps - left.apr_bps;
-    }
-  });
 }
 
 export default async function LenderMarketplacePage({
@@ -85,6 +58,9 @@ export default async function LenderMarketplacePage({
   const sort = parseSortOption(readSearchParam(resolvedSearchParams, "sort"));
   const highReputationOnly =
     readSearchParam(resolvedSearchParams, "highReputation") === "true";
+  const maxDurationDays = parseDurationFilter(
+    readSearchParam(resolvedSearchParams, "maxDuration"),
+  );
 
   const { user } = await requireAuthenticatedUser("lender");
   const walletAddress =
@@ -195,14 +171,12 @@ export default async function LenderMarketplacePage({
     // the fallback query cannot compare two columns, so enforce it here too.
     .filter((loan) => !getFundingProgress(loan.principal_amount, loan.funded_amount).isFullyFunded);
 
-  const visibleMarketplaceLoans = sortMarketplaceLoans(
-    highReputationOnly
-      ? marketplaceLoans.filter(
-          (loan) => loan.trust_score >= HIGH_REPUTATION_THRESHOLD,
-        )
-      : marketplaceLoans,
+  const visibleMarketplaceLoans = filterMarketplaceLoans(marketplaceLoans, {
     sort,
-  );
+    maxDurationDays,
+    highReputationOnly,
+    highReputationThreshold: HIGH_REPUTATION_THRESHOLD,
+  });
 
   const profileRes = supabase
     ? await supabase
@@ -365,6 +339,38 @@ export default async function LenderMarketplacePage({
                 </label>
 
                 <label
+                  className="workspace-form-group"
+                  style={{ minWidth: "200px", flex: "1 1 200px" }}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.02em",
+                      textTransform: "uppercase",
+                      opacity: 0.7,
+                    }}
+                  >
+                    Max duration
+                  </span>
+                  <select
+                    name="maxDuration"
+                    defaultValue={
+                      maxDurationDays === null
+                        ? "all"
+                        : String(maxDurationDays)
+                    }
+                    className="workspace-input"
+                  >
+                    {DURATION_FILTER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -450,7 +456,9 @@ export default async function LenderMarketplacePage({
                     0 matches
                   </span>
                 )}
-                {(sort !== DEFAULT_SORT || highReputationOnly) &&
+                {(sort !== DEFAULT_SORT ||
+                  highReputationOnly ||
+                  maxDurationDays !== null) &&
                 marketplaceLoans.length > 0 ? (
                   <span style={{ fontSize: "0.78rem", opacity: 0.65 }}>
                     from {marketplaceLoans.length} total requests
@@ -469,7 +477,7 @@ export default async function LenderMarketplacePage({
                 emptyStateDescription={
                   marketplaceLoans.length === 0
                     ? "No open loan requests right now. Check back soon."
-                    : "Try a different sort option or turn off the high-reputation filter."
+                    : "Try a different sort option, a longer duration, or turn off the high-reputation filter."
                 }
               />
             </article>
