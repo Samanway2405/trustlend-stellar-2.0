@@ -7,6 +7,11 @@ import {
   getWalletProviderLabel,
   signTransactionWithWallet,
 } from "@/lib/stellar/wallet";
+import { formatCurrency, formatXlmPrecise } from "@/lib/utils/formatting";
+import {
+  splitRepaymentAcrossLenders,
+  type LenderContribution,
+} from "@/lib/loans/funding";
 
 interface RepayLoan {
   id: string;
@@ -109,7 +114,7 @@ function SuccessOverlay({
           }}
         >
           <strong style={{ color: "#22cf9d" }}>
-            {data.amount.toFixed(2)} XLM
+            {formatCurrency(data.amount)}
           </strong>{" "}
           has been sent and recorded.
         </p>
@@ -245,6 +250,20 @@ export function BorrowerRepayWidget({
       if (!lenderAddress)
         throw new Error("Could not find lender wallet structure!");
 
+      // A loan may have been filled by several lenders (Issue #269); each is
+      // owed a slice of this repayment. Older responses carry only a single
+      // lenderAddress, so fall back to treating that as the sole contributor.
+      const lenderContributions: LenderContribution[] =
+        Array.isArray(prefData.lenders) && prefData.lenders.length > 0
+          ? prefData.lenders.map(
+              (entry: { address: string; lenderUserId?: string; contribution?: number }) => ({
+                lenderId: String(entry.lenderUserId ?? ""),
+                address: String(entry.address),
+                contribution: Number(entry.contribution ?? 0),
+              }),
+            )
+          : [{ lenderId: "", address: String(lenderAddress), contribution: 1 }];
+
       // 2. Wallet Connection
       setStep("connecting");
       const wallet = await getConnectedWallet();
@@ -275,37 +294,40 @@ export function BorrowerRepayWidget({
       const totalDueGross = prefData.breakdown.totalDue;
       const platformFee = prefData.breakdown.platformFee;
 
-      if (platformWallet && platformFee > 0 && totalDueGross > 0) {
-        // Splitting the payment proportionally based on what they are paying right now
-        const ratio = amount / totalDueGross;
-        const platformCut = +(platformFee * ratio).toFixed(7);
-        const lenderCut = +(amount - platformCut).toFixed(7);
+      // Work out what goes to the lenders vs. the platform, then split the
+      // lender portion pro-rata across everyone who funded the loan.
+      let lenderCut = amount;
+      let platformCut = 0;
 
-        if (lenderCut > 0) {
-          builder.addOperation(
-            Operation.payment({
-              destination: lenderAddress,
-              asset: Asset.native(),
-              amount: lenderCut.toFixed(7),
-            }),
-          );
-        }
-        if (platformCut > 0) {
-          builder.addOperation(
-            Operation.payment({
-              destination: platformWallet,
-              asset: Asset.native(),
-              amount: platformCut.toFixed(7),
-            }),
-          );
-        }
-      } else {
-        // Fallback: send directly to lender if no platform wallet configured
+      if (platformWallet && platformFee > 0 && totalDueGross > 0) {
+        // Split proportionally based on what they are paying right now
+        const ratio = amount / totalDueGross;
+        platformCut = +(platformFee * ratio).toFixed(7);
+        lenderCut = +(amount - platformCut).toFixed(7);
+      }
+
+      const payouts = splitRepaymentAcrossLenders(lenderCut, lenderContributions);
+
+      if (payouts.length === 0) {
+        throw new Error("Could not determine how to split this repayment.");
+      }
+
+      for (const payout of payouts) {
         builder.addOperation(
           Operation.payment({
-            destination: lenderAddress,
+            destination: payout.address,
             asset: Asset.native(),
-            amount: amount.toFixed(7),
+            amount: payout.payout.toFixed(7),
+          }),
+        );
+      }
+
+      if (platformCut > 0 && platformWallet) {
+        builder.addOperation(
+          Operation.payment({
+            destination: platformWallet,
+            asset: Asset.native(),
+            amount: platformCut.toFixed(7),
           }),
         );
       }
@@ -433,7 +455,7 @@ export function BorrowerRepayWidget({
               }}
             >
               {dueAmount > 0
-                ? `${dueAmount.toFixed(2)} XLM remaining`
+                ? `${formatCurrency(dueAmount)} remaining`
                 : "Fully Paid ✅"}
             </span>
             {breakdownData && dueAmount > 0 && (
@@ -480,7 +502,7 @@ export function BorrowerRepayWidget({
             >
               <span>Principal ({breakdownData.durationDays} days):</span>
               <span style={{ fontWeight: 600 }}>
-                {breakdownData.principal.toFixed(2)} XLM
+                {formatCurrency(breakdownData.principal)}
               </span>
             </div>
             <div
@@ -492,7 +514,7 @@ export function BorrowerRepayWidget({
             >
               <span>Interest ({breakdownData.aprPct}% APR):</span>
               <span style={{ fontWeight: 600, color: "#f5a623" }}>
-                +{breakdownData.interest.toFixed(2)} XLM
+                +{formatCurrency(breakdownData.interest)}
               </span>
             </div>
             <div
@@ -504,7 +526,7 @@ export function BorrowerRepayWidget({
             >
               <span>Platform Fee (1%):</span>
               <span style={{ fontWeight: 600, color: "#ef4444" }}>
-                +{breakdownData.platformFee.toFixed(2)} XLM
+                +{formatCurrency(breakdownData.platformFee)}
               </span>
             </div>
             <div
@@ -519,7 +541,7 @@ export function BorrowerRepayWidget({
               }}
             >
               <span>Total Required:</span>
-              <span>{breakdownData.totalDue.toFixed(2)} XLM</span>
+              <span>{formatCurrency(breakdownData.totalDue)}</span>
             </div>
             <div
               style={{
@@ -529,7 +551,7 @@ export function BorrowerRepayWidget({
               }}
             >
               <span>Already Paid:</span>
-              <span>-{breakdownData.alreadyPaid.toFixed(2)} XLM</span>
+              <span>-{formatCurrency(breakdownData.alreadyPaid)}</span>
             </div>
           </div>
         )}
@@ -548,7 +570,7 @@ export function BorrowerRepayWidget({
             <span>
               Repaid:{" "}
               <strong style={{ color: "#22cf9d" }}>
-                {loan.repaid_amount.toFixed(2)} XLM
+                {formatCurrency(loan.repaid_amount)}
               </strong>
             </span>
             <span style={{ fontWeight: 700 }}>{pct}%</span>
@@ -612,7 +634,7 @@ export function BorrowerRepayWidget({
                   ? step === "connecting"
                     ? `Connecting ${activeWalletLabel}...`
                     : STEP_LABELS[step]
-                  : `💳 Pay Full — ${dueAmount.toFixed(2)} XLM`}
+                  : `💳 Pay Full — ${formatCurrency(dueAmount)}`}
               </button>
               <button
                 onClick={() =>
@@ -671,7 +693,7 @@ export function BorrowerRepayWidget({
                   const n = parseFloat(customAmount);
                   if (!n || n <= 0 || n > dueAmount) {
                     setError(
-                      `Enter a value between 0.01 and ${dueAmount.toFixed(2)}`,
+                      `Enter a value between 0.01 and ${formatCurrency(dueAmount)}`,
                     );
                     return;
                   }
@@ -784,7 +806,7 @@ export function BorrowerRepayWidget({
                         color: "#22cf9d",
                       }}
                     >
-                      +{Number(r.amount).toFixed(2)} XLM repaid
+                      +{formatCurrency(Number(r.amount))} repaid
                     </span>
                     <span
                       style={{

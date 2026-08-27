@@ -205,29 +205,52 @@ To run property-based tests (proptest) for the lending contract:
 cargo test -p lending --test proptest_tests -- --test-threads=1
 ```
 
-### 4.3 Deploy Contracts to Testnet (Maintainers)
+### 4.3 Deploy Contracts to Testnet
 
-> This requires a Stellar testnet account with a funded `G...` address.
-
-Generate a keypair and fund it:
+One command builds, deploys, initializes and wires up every contract, then
+writes the resulting contract IDs straight into your `.env.local`:
 
 ```bash
-stellar keys generate trustlend-admin --global
-stellar keys address trustlend-admin
-# -> GABCDE...
-curl "https://friendbot.stellar.org?addr=GABCDE..."
+npm run deploy:testnet
 ```
 
-Deploy a specific contract:
+That is all you need. The CLI creates the `trustlend-admin` identity and funds
+it from friendbot on your behalf if it does not exist yet — no manual keypair
+setup first.
+
+Preview exactly what it would do without touching the network:
+
+```bash
+npm run deploy:testnet:dry
+```
+
+Useful flags (`npm run deploy:testnet -- --help` lists them all):
+
+| Flag | Purpose |
+| --- | --- |
+| `--only lending,escrow` | Deploy just these contracts |
+| `--resume` | Reuse IDs from the last run instead of redeploying |
+| `--skip-build` | Reuse the WASM already in `contracts/target` |
+| `--env-file .env.staging` | Write to a different env file |
+| `--dry-run` | Print every command without running it |
+
+If a deploy fails partway through, re-run with `--resume`: contract IDs are
+recorded after each individual deployment, so you never pay to deploy the same
+contract twice.
+
+To deploy a single contract by hand instead:
 
 ```bash
 stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/lending.wasm \
+  --wasm target/wasm32v1-none/release/lending.wasm \
   --source trustlend-admin \
   --network testnet
 ```
 
-For a full workspace deployment, see `contracts/scripts/deploy.sh`.
+> The older `contracts/scripts/deploy.sh` and `deploy.ps1` still work, but
+> `npm run deploy:testnet` supersedes them — it is cross-platform, deploys the
+> pooled-lending contract they missed, and updates `.env.local` for you rather
+> than leaving you to copy `.env.contracts` across by hand.
 
 ---
 

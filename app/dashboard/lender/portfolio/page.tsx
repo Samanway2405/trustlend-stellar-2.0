@@ -3,6 +3,9 @@ import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { getLenderDashboardMetrics, presentLenderMetrics } from "@/lib/dashboard/metrics";
 import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
 import { lenderNavLinks } from "@/lib/dashboard/lender-links";
+import { formatCurrency, formatXlmPrecise } from "@/lib/utils/formatting";
+import { TaxReportExportButton } from "@/components/dashboard/TaxReportExportButton";
+import { collectReportYears } from "@/lib/lender/tax-report";
 
 export default async function LenderPortfolioPage() {
   const { user } = await requireAuthenticatedUser("lender");
@@ -16,7 +19,7 @@ export default async function LenderPortfolioPage() {
     ? await Promise.all([
         supabase
           .from("pool_positions")
-          .select("id, pool_id, status, principal_amount, earned_interest, opened_at")
+          .select("id, pool_id, status, principal_amount, earned_interest, opened_at, closed_at")
           .eq("lender_id", user.id)
           .order("opened_at", { ascending: false })
           .limit(8),
@@ -36,7 +39,7 @@ export default async function LenderPortfolioPage() {
   const { data: p2pFunds } = supabase
     ? await supabase
         .from("ledger_transactions")
-        .select("amount, ref_id")
+        .select("amount, ref_id, created_at")
         .eq("user_id", user.id)
         .eq("ref_type", "loan_fund")
     : { data: [] };
@@ -44,7 +47,7 @@ export default async function LenderPortfolioPage() {
   const { data: p2pRepays } = srClient
     ? await srClient
         .from("ledger_transactions")
-        .select("amount, metadata, ref_id")
+        .select("amount, metadata, ref_id, created_at")
         .eq("ref_type", "loan_repay")
     : { data: [] };
 
@@ -62,6 +65,16 @@ export default async function LenderPortfolioPage() {
 
   const poolProfit = positions.reduce((s, r) => s + Number(r.earned_interest ?? 0), 0);
 
+  // Years the lender actually has activity in, for the tax-export picker.
+  const reportYears = collectReportYears([
+    ...positions.flatMap((position) => [
+      position.opened_at ? String(position.opened_at) : null,
+      position.closed_at ? String(position.closed_at) : null,
+    ]),
+    ...(p2pFunds ?? []).map((tx) => (tx.created_at ? String(tx.created_at) : null)),
+    ...lenderRepays.map((tx) => (tx.created_at ? String(tx.created_at) : null)),
+  ]);
+
   return (
     <WorkspaceFrame
       roleLabel="Lender Dashboard"
@@ -75,6 +88,32 @@ export default async function LenderPortfolioPage() {
     >
       <div className="workspace-stack">
 
+        {/* Tax report export (issue #271) */}
+        <article className="workspace-card workspace-card--full">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "1rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h2 className="workspace-card-title" style={{ margin: 0 }}>
+                Tax Report
+              </h2>
+              <p className="workspace-card-copy" style={{ margin: "0.35rem 0 0", maxWidth: "44rem" }}>
+                Download a CSV of every interest payment you have earned — pool
+                interest and direct marketplace loans — with the date, amount and
+                asset for each entry.
+              </p>
+            </div>
+
+            <TaxReportExportButton years={reportYears} />
+          </div>
+        </article>
+
         {/* Profit Breakdown */}
         <section className="workspace-grid workspace-grid--two">
            <article className="workspace-card" style={{ background: "linear-gradient(135deg, #7e2fd0, #5a1fad)", color: "#fff", border: "none" }}>
@@ -86,11 +125,11 @@ export default async function LenderPortfolioPage() {
                  </div>
               </div>
               <p style={{ fontSize: "2rem", fontWeight: 800, margin: "0 0 0.5rem" }}>
-                {marketplaceProfit > 0 ? "+" : ""}{marketplaceProfit.toFixed(2)} XLM
+                {marketplaceProfit > 0 ? "+" : ""}{formatCurrency(marketplaceProfit)}
               </p>
               <div style={{ fontSize: "0.85rem", opacity: 0.8, display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.2)", paddingTop: "0.5rem", marginTop: "0.5rem" }}>
-                 <span>Deployed: {marketplaceDeployed.toFixed(2)} XLM</span>
-                 <span>Received: {marketplaceReceived.toFixed(2)} XLM</span>
+                 <span>Deployed: {formatCurrency(marketplaceDeployed)}</span>
+                 <span>Received: {formatCurrency(marketplaceReceived)}</span>
               </div>
            </article>
 
@@ -103,10 +142,10 @@ export default async function LenderPortfolioPage() {
                  </div>
               </div>
               <p style={{ fontSize: "2rem", fontWeight: 800, margin: "0 0 0.5rem" }}>
-                {poolProfit > 0 ? "+" : ""}{poolProfit.toFixed(4)} XLM
+                {poolProfit > 0 ? "+" : ""}{formatXlmPrecise(poolProfit)}
               </p>
               <div style={{ fontSize: "0.85rem", opacity: 0.8, display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.2)", paddingTop: "0.5rem", marginTop: "0.5rem" }}>
-                 <span>Total Deployed: {positions.reduce((s,p) => s + Number(p.principal_amount), 0).toFixed(2)} XLM</span>
+                 <span>Total Deployed: {formatCurrency(positions.reduce((s,p) => s + Number(p.principal_amount), 0))}</span>
                  <span>Positions: {positions.length}</span>
               </div>
            </article>
@@ -139,8 +178,8 @@ export default async function LenderPortfolioPage() {
                                   {String(position.status).toUpperCase()}
                                </span>
                              </td>
-                             <td>{Number(position.principal_amount ?? 0).toFixed(2)} XLM</td>
-                             <td style={{ color: "#22cf9d", fontWeight: "bold" }}>+{Number(position.earned_interest ?? 0).toFixed(4)} XLM</td>
+                             <td>{formatCurrency(Number(position.principal_amount ?? 0))}</td>
+                             <td style={{ color: "#22cf9d", fontWeight: "bold" }}>+{formatXlmPrecise(Number(position.earned_interest ?? 0))}</td>
                           </tr>
                         ))}
                      </tbody>

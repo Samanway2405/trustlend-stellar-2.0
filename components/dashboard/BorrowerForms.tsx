@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatTokenBalance } from "@/lib/utils/formatting";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
 import {
   LendingContract,
   ReputationContract,
@@ -144,6 +146,35 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
             <div>
               <strong>Floating Rate</strong>
               <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>Starts lower, adjusts with market.</p>
+              
+              {rateModel === "floating" && (
+                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Base Rate</span>
+                      <Tooltip content="The minimum interest rate charged when pool utilization is 0%.">
+                        <span style={{ cursor: 'help', fontSize: '0.75rem', opacity: 0.7 }}>ⓘ</span>
+                      </Tooltip>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Utilization Rate</span>
+                      <Tooltip content="The percentage of the pool's total liquidity that is currently borrowed.">
+                        <span style={{ cursor: 'help', fontSize: '0.75rem', opacity: 0.7 }}>ⓘ</span>
+                      </Tooltip>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Multiplier</span>
+                      <Tooltip content="The rate at which interest increases as utilization increases.">
+                        <span style={{ cursor: 'help', fontSize: '0.75rem', opacity: 0.7 }}>ⓘ</span>
+                      </Tooltip>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </label>
         </div>
@@ -276,6 +307,8 @@ interface BorrowerLoan {
   status: string;
   due_at: string | null;
   principal_amount: number;
+  /** Total lenders have contributed so far (Issue #269). */
+  funded_amount?: number;
   repaid_amount: number;
   apr_bps?: number;
   duration_days?: number;
@@ -343,8 +376,7 @@ export function BorrowerForms({
             duration,
             onChainRate,
             onChainMax,
-            collateralAsset,
-            collateralAmountStroops,
+            [{ asset: collateralAsset, amount: collateralAmountStroops }],
             rateModel === "fixed" ? "Fixed" : "Floating"
           );
 
@@ -403,6 +435,7 @@ export function BorrowerForms({
           <h2 className="workspace-card-title">Pending Loan Request{pendingLoans.length > 1 ? "s" : ""}</h2>
           <p className="workspace-card-copy" style={{ marginTop: "0.35rem" }}>
             Your submitted request{pendingLoans.length > 1 ? "s are" : " is"} waiting for lender funding.
+            Several lenders can each fund a slice — the loan activates once it reaches 100%.
           </p>
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
             {pendingLoans.slice(0, 3).map((loan) => (
@@ -426,9 +459,18 @@ export function BorrowerForms({
                     Requested {loan.created_at ? new Date(String(loan.created_at)).toLocaleDateString() : "recently"}
                   </p>
                 </div>
+                <div style={{ flex: "1 1 12rem", minWidth: "10rem" }}>
+                  <FundingProgressBar
+                    principalAmount={loan.principal_amount}
+                    fundedAmount={loan.funded_amount ?? 0}
+                  />
+                </div>
+
                 <div style={{ textAlign: "right" }}>
                   <p style={{ margin: 0, fontWeight: 800, color: "#7e2fd0" }}>{formatTokenBalance(Number(loan.principal_amount ?? 0))}</p>
-                  <p style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, margin: "0.15rem 0 0" }}>REQUESTED</p>
+                  <p style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, margin: "0.15rem 0 0" }}>
+                    {Number(loan.funded_amount ?? 0) > 0 ? "PARTIALLY FUNDED" : "REQUESTED"}
+                  </p>
                 </div>
               </div>
             ))}

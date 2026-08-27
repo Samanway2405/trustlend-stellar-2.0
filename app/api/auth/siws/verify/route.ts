@@ -24,9 +24,10 @@ export async function POST(request: NextRequest) {
   if (rateLimited) return rateLimited;
 
   try {
-    const { address, signedTxXdr } = (await request.json()) as {
+    const { address, signedTxXdr, role } = (await request.json()) as {
       address?: string;
       signedTxXdr?: string;
+      role?: string;
     };
     if (!address || !signedTxXdr) {
       return NextResponse.json(
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     const wallet = verifyChallenge(signedTxXdr, address);
 
     // Provision / sign in the wallet identity and return the session.
-    const { session, isNewUser } = await issueSessionForWallet(wallet);
+    const { session, isNewUser } = await issueSessionForWallet(wallet, role);
 
     return NextResponse.json({
       access_token: session.access_token,
