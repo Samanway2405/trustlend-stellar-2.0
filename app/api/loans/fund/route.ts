@@ -4,6 +4,7 @@ import { enforceRouteRateLimit } from "@/lib/rate-limit";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { sendLoanFundedEmail } from "@/lib/email/resend";
 import { getFundingProgress, validateFundingAmount } from "@/lib/loans/funding";
+import { qualifyReferralForLoan } from "@/lib/referrals/qualify";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
 /**
@@ -251,6 +252,26 @@ export async function POST(request: NextRequest) {
         amount: progressAfter.principal,
         loanId,
       });
+
+      // ── Referral bonus (Issue #266) ──
+      // The loan is now Active, which is what qualifies the borrower's
+      // referrer. The XLM payout itself is made on-chain by the lending
+      // contract during activate_loan; this mirrors it for the dashboard.
+      const referral = await qualifyReferralForLoan({
+        supabase,
+        refereeId: String(loan.borrower_id),
+        loanId,
+      });
+
+      if (referral.qualified && referral.referrerId) {
+        await createNotification({
+          userId: referral.referrerId,
+          title: "Referral Bonus Earned!",
+          message:
+            "Someone you invited just had their first loan funded. Your referral bonus is on its way to your wallet.",
+          type: "investment_made",
+        });
+      }
     } else {
       // Partial fill — tell the borrower how far along the request is.
       await createNotification({

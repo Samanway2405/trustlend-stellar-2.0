@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Referral programme (#266): every user gets a unique invite link, and when an
+  invited friend's first loan is funded the referrer's bonus is transferred
+  automatically by the new `referral_rewards` Soroban contract during
+  `activate_loan`. Includes a referral dashboard, attribution APIs, and
+  `sql/09_referral_program.sql`. See [REFERRAL_PROGRAM.md](REFERRAL_PROGRAM.md).
 - Borrowing user guide and FAQ at `/docs/borrowing`, covering the step-by-step
   borrowing process, how the liquidation threshold is calculated, Health Factor
   bands, and 15 frequently asked questions. Linked from the borrower dashboard
