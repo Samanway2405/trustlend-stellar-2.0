@@ -6,12 +6,13 @@ import { formatCurrency } from "@/lib/utils/formatting";
 import { STELLAR_TESTNET } from "@/lib/stellar/testnet";
 import {
   connectWallet,
+  disconnectWallet as disconnectWalletSession,
   getStoredWalletProvider,
   getWalletProviderLabel,
   setStoredWalletProvider,
   type StellarWalletProvider,
 } from "@/lib/stellar/wallet";
-import { WalletSelectionModal } from "@/components/dashboard/WalletSelectionModal";
+import { WalletSelectionModal } from "@/components/ui/WalletSelectionModal";
 
 interface WalletCardProps {
   address: string | null;
@@ -128,7 +129,6 @@ export function WalletCard({
         connectedWallet.address,
         connectedWallet.provider,
       );
-      setShowWalletSelection(false);
     } catch (error) {
       setWalletError(
         error instanceof Error ? error.message : "Failed to connect wallet.",
@@ -146,6 +146,9 @@ export function WalletCard({
       setWalletAddress(null);
       setWalletBalance(null);
       await persistWalletAddress(null, null);
+      // Closes the WalletConnect pairing too, so a stale mobile session cannot
+      // keep signing after the user disconnects here.
+      await disconnectWalletSession();
     } catch (error) {
       setWalletError(
         error instanceof Error ? error.message : "Failed to disconnect wallet.",
@@ -194,7 +197,10 @@ export function WalletCard({
           open={showWalletSelection}
           busy={isBusy}
           selectedProvider={selectedProvider}
-          onSelect={(provider) => void connectSelectedWallet(provider)}
+          onSelect={(provider) => {
+            setShowWalletSelection(false);
+            void connectSelectedWallet(provider);
+          }}
           onClose={() => setShowWalletSelection(false)}
         />
         <article className="wallet-card-shell wallet-card-shell--compact">
@@ -220,6 +226,7 @@ export function WalletCard({
               className="wallet-card-action"
               onClick={handleWalletAction}
               disabled={isBusy}
+              data-wallet-select-trigger
               suppressHydrationWarning
             >
               {isBusy
@@ -265,7 +272,10 @@ export function WalletCard({
         open={showWalletSelection}
         busy={isBusy}
         selectedProvider={selectedProvider}
-        onSelect={(provider) => void connectSelectedWallet(provider)}
+        onSelect={(provider) => {
+          setShowWalletSelection(false);
+          void connectSelectedWallet(provider);
+        }}
         onClose={() => setShowWalletSelection(false)}
       />
       <article className="wallet-card-shell">
@@ -291,6 +301,7 @@ export function WalletCard({
             className="wallet-card-action"
             onClick={handleWalletAction}
             disabled={isBusy}
+            data-wallet-select-trigger
             suppressHydrationWarning
           >
             {isBusy

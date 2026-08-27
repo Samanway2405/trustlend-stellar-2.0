@@ -1,5 +1,30 @@
 import type { NextConfig } from "next";
 
+/**
+ * Origins the WalletConnect v2 stack talks to when a user connects a mobile
+ * wallet by QR code (see lib/stellar/wallet.ts). Without these, the browser
+ * blocks the relay socket and the pairing never completes.
+ */
+const WALLET_CONNECT_CONNECT_SRC = [
+  // Relay websocket + its HTTPS fallback, on both the .org and legacy .com hosts
+  "https://relay.walletconnect.org",
+  "wss://relay.walletconnect.org",
+  "https://relay.walletconnect.com",
+  "wss://relay.walletconnect.com",
+  // Reown AppKit: wallet registry, and its telemetry/analytics endpoint
+  "https://api.web3modal.org",
+  "https://explorer-api.walletconnect.com",
+  "https://pulse.walletconnect.org",
+];
+
+/** Wallet and AppKit logo hosts used by the wallet picker. */
+const WALLET_IMG_SRC = [
+  "https://explorer-api.walletconnect.com",
+  "https://api.web3modal.org",
+  // StellarWalletsKit serves each module's product icon from here
+  "https://stellar.creit.tech",
+];
+
 const securityHeaders = [
   // Content Security Policy — restricts where resources can load from
   {
@@ -10,9 +35,17 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      // Supabase + Stellar APIs
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://horizon-testnet.stellar.org https://soroban-testnet.stellar.org https://friendbot.stellar.org",
-      "img-src 'self' data: blob: https://*.supabase.co",
+      // Supabase + Stellar APIs + the WalletConnect relay
+      [
+        "connect-src 'self'",
+        "https://*.supabase.co",
+        "wss://*.supabase.co",
+        "https://horizon-testnet.stellar.org",
+        "https://soroban-testnet.stellar.org",
+        "https://friendbot.stellar.org",
+        ...WALLET_CONNECT_CONNECT_SRC,
+      ].join(" "),
+      ["img-src 'self' data: blob:", "https://*.supabase.co", ...WALLET_IMG_SRC].join(" "),
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

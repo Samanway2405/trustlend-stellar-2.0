@@ -57,15 +57,50 @@ signed by a dedicated **SEP-10 server key** (`SIWS_SERVER_SECRET`, distinct from
 the platform admin key), valid for 5 minutes, bound to `NEXT_PUBLIC_SIWS_DOMAIN`.
 Rate-limited via the existing `enforceRouteRateLimit`.
 
-## 3. Client: sign with Freighter (Task 3)
+## 3. Client: pick a wallet, then sign (Task 3)
 
 [lib/auth/siws-client.ts](lib/auth/siws-client.ts) `signInWithStellar()` drives the
 whole flow; [components/auth/StellarSignInButton.tsx](components/auth/StellarSignInButton.tsx)
 is a "Sign in with Stellar" button next to "Continue with Google" on the auth page
 ([components/auth/AuthPageClient.tsx](components/auth/AuthPageClient.tsx)). It
 reuses the existing multi-wallet signer
-([lib/stellar/wallet.ts](lib/stellar/wallet.ts) — Freighter or Albedo) so the
-challenge is signed exactly like any other TrustLend wallet transaction.
+([lib/stellar/wallet.ts](lib/stellar/wallet.ts)) so the challenge is signed exactly
+like any other TrustLend wallet transaction.
+
+Clicking the button opens the wallet picker
+([components/ui/WalletSelectionModal.tsx](components/ui/WalletSelectionModal.tsx),
+shared with the dashboard's `WalletCard`), which offers **Freighter**,
+**WalletConnect**, **xBull** and **Albedo**. The chosen provider is passed into
+`signInWithStellar(provider, role)`, so the login challenge is signed by whichever
+wallet the user picked.
+
+### Mobile wallets (WalletConnect v2)
+
+Choosing **WalletConnect** opens a QR code the user scans with a mobile Stellar
+wallet (LOBSTR, Freighter Mobile, …); the sign request is then relayed to the
+phone for approval, and the signed XDR comes back over the same session. A few
+details matter for this to work end to end:
+
+- **Module id.** The kit registers WalletConnect as `wallet_connect` (underscore).
+  These ids live in [lib/stellar/wallet-providers.ts](lib/stellar/wallet-providers.ts);
+  `assertWalletModuleIds()` warns in development if the kit ever renames one.
+- **Chain negotiation.** The session is opened with `allowedChains` derived from
+  `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` (`stellar:pubnet` for mainnet, otherwise
+  `stellar:testnet`). The kit defaults to pubnet only, which makes testnet signing
+  fail with a chain mismatch after the wallet has already paired.
+- **Connecting.** `connectWallet()` uses the kit's `fetchAddress()`, which calls into
+  the module and opens the QR modal. `getAddress()` only reads the kit's in-memory
+  address and throws when empty, so it never triggers a pairing.
+- **Readiness.** The WalletConnect sign client boots asynchronously, so the module
+  reports itself unavailable for a moment after init. `connectWallet()` polls
+  `isAvailable()` before connecting instead of failing on a cold start.
+- **Sessions.** The kit persists the address, selected module and WalletConnect
+  session topics in `localStorage`, so a reload keeps signing. A cached address is
+  only reused when it belongs to the wallet being requested — otherwise a previously
+  connected Freighter address would be handed to a WalletConnect request that has no
+  matching session. Disconnecting calls `disconnectWallet()`, which closes the pairing.
+- **CSP.** The relay and Reown AppKit origins are allowlisted in
+  [next.config.ts](next.config.ts); without them the browser blocks the relay socket.
 
 ## 4. Backend: signature validation → session (Task 4)
 
@@ -113,6 +148,7 @@ network, user rejected) via the existing `signTransactionWithWallet` error paths
 NEXT_PUBLIC_SIWS_DOMAIN=localhost:3000   # SEP-10 home/web-auth domain (both sides must match)
 SIWS_SERVER_SECRET=                       # dedicated SEP-10 signing key (S...)
 SIWS_PASSWORD_SECRET=                     # HMAC secret for wallet-user passwords
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=     # Reown/WalletConnect Cloud project id (enables mobile wallets)
 # reuses: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
 #         SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE
 ```

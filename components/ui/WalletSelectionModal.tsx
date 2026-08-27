@@ -1,37 +1,59 @@
 "use client";
 
-import type { StellarWalletProvider } from "@/lib/stellar/wallet";
-import { getWalletProviderLabel } from "@/lib/stellar/wallet";
 import { useEffect, useRef } from "react";
 import { FocusTrap } from "@/components/ui/FocusTrap";
+import {
+  getWalletProviderLabel,
+  isWalletConnectConfigured,
+  type StellarWalletProvider,
+} from "@/lib/stellar/wallet-providers";
 
 interface WalletSelectionModalProps {
   open: boolean;
+  /** A connection is in flight — options are locked and the modal cannot be dismissed. */
   busy?: boolean;
   selectedProvider: StellarWalletProvider;
+  /**
+   * Called with the chosen wallet. Callers are expected to close the modal
+   * before starting the connection: WalletConnect renders its QR code in its own
+   * overlay, which would otherwise stack underneath this one.
+   */
   onSelect: (provider: StellarWalletProvider) => void;
   onClose: () => void;
+  title?: string;
+  description?: string;
 }
 
-const WALLET_OPTIONS: Array<{
+interface WalletOption {
   provider: StellarWalletProvider;
   title: string;
   description: string;
-}> = [
+  /** Shown as a pill next to the name, e.g. to flag the mobile QR flow. */
+  badge?: string;
+}
+
+const WALLET_OPTIONS: WalletOption[] = [
   {
     provider: "freighter",
     title: "Freighter",
     description: "Use the browser extension wallet already supported by TrustLend.",
   },
   {
+    provider: "walletconnect",
+    title: "WalletConnect",
+    description:
+      "Scan a QR code with LOBSTR, Freighter Mobile, or any other WalletConnect v2 Stellar wallet.",
+    badge: "Mobile",
+  },
+  {
+    provider: "xbull",
+    title: "xBull",
+    description: "Connect through the xBull extension or its web wallet.",
+  },
+  {
     provider: "albedo",
     title: "Albedo",
     description: "Connect and sign through Albedo as an alternative Stellar wallet flow.",
-  },
-  {
-    provider: "walletconnect",
-    title: "WalletConnect",
-    description: "Connect using LOBSTR, Scopuly, or any other WalletConnect v2 compatible mobile wallet.",
   },
 ];
 
@@ -41,25 +63,31 @@ export function WalletSelectionModal({
   selectedProvider,
   onSelect,
   onClose,
+  title = "Select a Stellar wallet",
+  description = "Choose how you want to connect and sign transactions on TrustLend.",
 }: WalletSelectionModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const firstOptionRef = useRef<HTMLButtonElement>(null);
 
+  // WalletConnect needs a project id at build time; without one, surface why the
+  // option cannot be used instead of failing after the user clicks it.
+  const walletConnectReady = isWalletConnectConfigured();
+
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && open) {
+      if (e.key === "Escape" && open && !busy) {
         onClose();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, busy, onClose]);
 
   // Return focus to trigger when modal closes
   useEffect(() => {
     if (!open) {
-      const trigger = document.querySelector('[data-wallet-select-trigger]') as HTMLElement;
+      const trigger = document.querySelector("[data-wallet-select-trigger]") as HTMLElement;
       trigger?.focus();
     } else {
       // Focus first option when modal opens
@@ -97,6 +125,8 @@ export function WalletSelectionModal({
           style={{
             width: "100%",
             maxWidth: "32rem",
+            maxHeight: "90vh",
+            overflowY: "auto",
             borderRadius: "1.25rem",
             background: "#ffffff",
             boxShadow: "0 30px 80px rgba(15, 23, 42, 0.22)",
@@ -110,10 +140,10 @@ export function WalletSelectionModal({
                 Wallet connection
               </p>
               <h3 id="wallet-modal-title" style={{ margin: "0.35rem 0 0", fontSize: "1.2rem", fontWeight: 800, color: "#111827" }}>
-                Select a Stellar wallet
+                {title}
               </h3>
               <p id="wallet-modal-description" style={{ margin: "0.45rem 0 0", fontSize: "0.9rem", lineHeight: 1.5, color: "#6b7280" }}>
-                Choose how you want to connect and sign transactions on TrustLend.
+                {description}
               </p>
             </div>
             <button
@@ -136,17 +166,19 @@ export function WalletSelectionModal({
           </div>
 
           <div style={{ display: "grid", gap: "0.85rem" }} role="listbox" aria-label="Available Stellar wallets">
-            {WALLET_OPTIONS.map((option) => {
+            {WALLET_OPTIONS.map((option, index) => {
               const active = option.provider === selectedProvider;
+              const unavailable = option.provider === "walletconnect" && !walletConnectReady;
+              const disabled = busy || unavailable;
               return (
                 <button
                   key={option.provider}
                   type="button"
                   onClick={() => onSelect(option.provider)}
-                  disabled={busy}
+                  disabled={disabled}
                   role="option"
                   aria-selected={active}
-                  ref={option.provider === "freighter" ? firstOptionRef : undefined}
+                  ref={index === 0 ? firstOptionRef : undefined}
                   style={{
                     textAlign: "left",
                     width: "100%",
@@ -154,13 +186,19 @@ export function WalletSelectionModal({
                     border: active ? "1px solid rgba(126, 47, 208, 0.5)" : "1px solid rgba(17, 24, 39, 0.08)",
                     background: active ? "rgba(126, 47, 208, 0.06)" : "#f9fafb",
                     padding: "1rem",
-                    cursor: busy ? "not-allowed" : "pointer",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: unavailable ? 0.55 : 1,
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
                     <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", flexWrap: "wrap" }}>
                         <strong style={{ fontSize: "1rem", color: "#111827" }}>{option.title}</strong>
+                        {option.badge ? (
+                          <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#17a87a", background: "rgba(34, 207, 157, 0.14)", padding: "0.2rem 0.5rem", borderRadius: "9999px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            {option.badge}
+                          </span>
+                        ) : null}
                         {active ? (
                           <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#7e2fd0", background: "rgba(126, 47, 208, 0.12)", padding: "0.2rem 0.5rem", borderRadius: "9999px" }}>
                             Selected
@@ -168,10 +206,12 @@ export function WalletSelectionModal({
                         ) : null}
                       </div>
                       <p style={{ margin: "0.35rem 0 0", fontSize: "0.87rem", color: "#6b7280", lineHeight: 1.45 }}>
-                        {option.description}
+                        {unavailable
+                          ? "Unavailable — this deployment has no WalletConnect project id configured."
+                          : option.description}
                       </p>
                     </div>
-                    <span style={{ color: "#9ca3af", fontSize: "1rem" }}>→</span>
+                    <span style={{ color: "#9ca3af", fontSize: "1rem", whiteSpace: "nowrap" }}>→</span>
                   </div>
                 </button>
               );
