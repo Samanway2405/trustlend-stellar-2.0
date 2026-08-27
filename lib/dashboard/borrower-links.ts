@@ -6,4 +6,5 @@ export const borrowerNavLinks = [
   { href: "/dashboard/borrower/history", label: "History" },
   { href: "/dashboard/borrower/tasks",   label: "Trust Tasks" },
   { href: "/dashboard/borrower/profile", label: "Profile & Settings" },
+  { href: "/docs/borrowing",             label: "Borrowing Guide" },
 ];
