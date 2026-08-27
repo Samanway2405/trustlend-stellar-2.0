@@ -16,6 +16,8 @@
     "price:oracle:once": "tsx scripts/price-oracle-keeper.ts --once",
     "price:oracle:dry": "tsx scripts/price-oracle-keeper.ts --dry-run",
     "webhooks:listener": "tsx scripts/webhook-listener.ts",
+    "backup:db": "bash scripts/backup.sh",
+    "backup:db:dry": "cross-env BACKUP_DRY_RUN=1 bash scripts/backup.sh",
     "prepare": "husky",
     "commitlint": "commitlint --edit",
     "test": "vitest run",
