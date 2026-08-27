@@ -179,6 +179,16 @@ describe("loadConfig", () => {
     expect(cfg.intervalSecs).toBe(30);
   });
 
+  // Acceptance criterion: the bot monitors prices every minute (60s).
+  it("supports the every-minute service interval via --interval=60", () => {
+    expect(loadConfig(["--interval=60"]).intervalSecs).toBe(60);
+  });
+
+  it("supports the every-minute service interval via env", () => {
+    process.env.LIQUIDATION_POLL_INTERVAL_SECS = "60";
+    expect(loadConfig([]).intervalSecs).toBe(60);
+  });
+
   it("rejects an invalid --source value", () => {
     expect(() => loadConfig(["--source=bogus"])).toThrow(/Invalid --source/);
   });

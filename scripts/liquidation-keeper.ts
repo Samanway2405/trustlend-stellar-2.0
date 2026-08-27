@@ -3,8 +3,10 @@
 // TrustLend — Automated Liquidation Keeper (issue #72)
 // =============================================================================
 // Monitors open loans for under-collateralization and liquidates them on-chain
-// before the protocol takes on bad debt. Designed to run either as a one-shot
-// cron invocation or as a long-running background service (`--interval`).
+// before the protocol takes on bad debt. Deployed as a background worker that
+// polls every minute via the `/api/cron/liquidation` Vercel Cron endpoint (or
+// `npm run liquidation:keeper:service` self-hosted); also runnable as a one-shot
+// cron invocation.
 //
 // Flow:
 //   1. Fetch open (Active) loans — from Supabase (`--source=db`, default) or
@@ -23,6 +25,9 @@
 //   npm run liquidation:keeper -- --dry-run        # evaluate only, never submit
 //   npm run liquidation:keeper -- --source=chain   # bypass Supabase entirely
 //   npm run liquidation:keeper -- --interval=60    # background service, poll every 60s
+//   npm run liquidation:keeper:service             # shorthand: poll every minute
+//   POST /api/cron/liquidation (Vercel Cron, * * * * *) — deployed worker, see
+//   vercel.json + LIQUIDATION_KEEPER.md
 //
 // ── Required env ─────────────────────────────────────────────────────────────
 //   ADMIN_SECRET_KEY, NEXT_PUBLIC_LENDING_CONTRACT_ID,
