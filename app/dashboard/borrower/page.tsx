@@ -1,6 +1,8 @@
 import { WorkspaceFrame } from "@/components/dashboard/WorkspaceFrame";
 import { WalletCard } from "@/components/dashboard/WalletCard";
 import { Badge } from "@/components/ui/Badge";
+import { TermTooltip } from "@/components/ui/TermTooltip";
+import type { GlossaryTermKey } from "@/lib/glossary/terms";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import {
   getBorrowerDashboardMetrics,
@@ -300,8 +302,25 @@ export default async function BorrowerDashboardPage() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid #eef0f8" }}>
-                    {["Loan ID", "Amount", "Status", "APR", "Due", "Stellar TX", "Receipt"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: "0.6rem 0.75rem", fontSize: "0.72rem", fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
+                    {([
+                      { label: "Loan ID" },
+                      { label: "Amount" },
+                      { label: "Status" },
+                      { label: "APR", term: "APR" },
+                      { label: "Due" },
+                      { label: "Stellar TX" },
+                      { label: "Receipt" },
+                    ] as Array<{ label: string; term?: GlossaryTermKey }>).map(({ label, term }) => (
+                      <th key={label} style={{ textAlign: "left", padding: "0.6rem 0.75rem", fontSize: "0.72rem", fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
+                        {term ? (
+                          <span className="term-tooltip">
+                            {label}
+                            <TermTooltip term={term} side="top" />
+                          </span>
+                        ) : (
+                          label
+                        )}
+                      </th>
                     ))}
                   </tr>
                 </thead>

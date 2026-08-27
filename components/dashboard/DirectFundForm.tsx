@@ -8,6 +8,7 @@ import {
   signTransactionWithWallet,
 } from "@/lib/stellar/wallet";
 import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
+import { TermTooltip } from "@/components/ui/TermTooltip";
 import {
   calculateLenderReturn,
   getFundingProgress,
@@ -324,9 +325,13 @@ export function DirectFundForm({ loan, onClose }: DirectFundFormProps) {
                 color: "rgba(0,0,0,0.5)",
                 textTransform: "uppercase",
                 fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.3rem",
               }}
             >
               Annual Return (APR)
+              <TermTooltip term="APR" side="top" />
             </p>
             <p
               style={{

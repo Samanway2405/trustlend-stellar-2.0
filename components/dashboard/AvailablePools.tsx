@@ -16,6 +16,8 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getBrowserSupabaseClient } from "@/lib/supabase/client";
 import { formatTokenBalance, formatCurrency } from "@/lib/utils/formatting";
+import { TermTooltip } from "@/components/ui/TermTooltip";
+import type { GlossaryTermKey } from "@/lib/glossary/terms";
 import { PoolCardSkeleton } from "./PoolCardSkeleton";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -165,11 +167,16 @@ function PoolCard({
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem" }}>
-        {[
-          { label: "APR", value: `${apr}%`, accent: "#22cf9d" },
-          { label: "Total Size", value: totalSize, accent: undefined },
-          { label: "Available", value: available, accent: undefined },
-        ].map(({ label, value, accent }) => (
+        {([
+          { label: "APR", value: `${apr}%`, accent: "#22cf9d", term: "APR" },
+          { label: "Total Size", value: totalSize, accent: undefined, term: undefined },
+          { label: "Available", value: available, accent: undefined, term: undefined },
+        ] as Array<{
+          label: string;
+          value: string;
+          accent?: string;
+          term?: GlossaryTermKey;
+        }>).map(({ label, value, accent, term }) => (
           <div key={label} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             <p
               style={{
@@ -178,9 +185,13 @@ function PoolCard({
                 letterSpacing: "0.07em",
                 opacity: 0.5,
                 margin: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.3rem",
               }}
             >
               {label}
+              {term && <TermTooltip term={term} side="top" />}
             </p>
             <p
               style={{
