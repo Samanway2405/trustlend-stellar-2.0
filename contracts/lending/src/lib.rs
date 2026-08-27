@@ -40,6 +40,42 @@ impl LoyaltyClient {
     }
 }
 
+/// Thin client for the ReferralRewardsContract (Issue #266).
+///
+/// Uses `try_invoke_contract` with a `_ => 0` fallback for the same reason as
+/// `LoyaltyClient`: a referral payout is a bonus, never a precondition. If the
+/// referral contract is unset, misconfigured, out of funds or panicking, the
+/// borrower's loan must still activate.
+struct ReferralClient(Address);
+impl ReferralClient {
+    fn new(_env: &Env, address: &Address) -> Self {
+        Self(address.clone())
+    }
+    fn claim_referral_bonus(
+        &self,
+        env: &Env,
+        caller: &Address,
+        referee: &Address,
+        loan_amount: &i128,
+    ) -> i128 {
+        let args: Vec<Val> = vec![
+            env,
+            caller.into_val(env),
+            referee.into_val(env),
+            (*loan_amount).into_val(env),
+        ];
+        let result = env.try_invoke_contract::<i128, Val>(
+            &self.0,
+            &Symbol::new(env, "claim_referral_bonus"),
+            args,
+        );
+        match result {
+            Ok(Ok(amount)) => amount,
+            _ => 0,
+        }
+    }
+}
+
 #[contractclient(name = "FlashLoanReceiverClient")]
 pub trait FlashLoanReceiver {
     fn execute_operation(
@@ -208,6 +244,8 @@ pub enum DataKey {
     LoyaltyContract,
     /// Reputation tier per loan (0=None, 1=Beginner, ..., 4=Platinum)
     LoanReputationTier(u32),
+    /// Referral Rewards contract address (Issue #266)
+    ReferralContract,
 }
 
 /// Default platform fee = 1 % of interest (100 bps) until governance changes it.
@@ -458,6 +496,24 @@ impl LendingContract {
 
     pub fn get_loyalty_contract(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::LoyaltyContract)
+    }
+
+    /// Set the Referral Rewards contract address (admin only, Issue #266).
+    /// Leaving it unset simply disables referral payouts.
+    pub fn set_referral_contract(env: Env, admin: Address, referral: Address) {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::ReferralContract, &referral);
+        env.events().publish(
+            (symbol_short!("lending"), symbol_short!("referral")),
+            referral,
+        );
+    }
+
+    pub fn get_referral_contract(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::ReferralContract)
     }
 
     /// Whitelist a new collateral asset ("adding pools"). Multisig-gated —
@@ -1168,6 +1224,25 @@ impl LendingContract {
 
         env.events()
             .publish((symbol_short!("loan"), symbol_short!("active")), loan_id);
+
+        // Pay the borrower's referrer, if they were invited by someone
+        // (Issue #266). The referral contract itself decides whether a bonus
+        // is due; it returns 0 for an unregistered or already-paid borrower.
+        // Any failure is swallowed by ReferralClient — a referral must never
+        // stop a loan from activating.
+        if let Some(referral) = env
+            .storage()
+            .instance()
+            .get::<DataKey, Address>(&DataKey::ReferralContract)
+        {
+            let client = ReferralClient::new(&env, &referral);
+            let _bonus = client.claim_referral_bonus(
+                &env,
+                &env.current_contract_address(),
+                &loan.borrower,
+                &loan.amount,
+            );
+        }
     }
 
     /// Record a repayment (partial or full).

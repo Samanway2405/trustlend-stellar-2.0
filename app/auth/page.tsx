@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { AuthPageClient } from "@/components/auth/AuthPageClient";
+import { ReferralCodeStash } from "@/components/auth/ReferralCodeStash";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -10,6 +11,8 @@ export const metadata: Metadata = {
 export default function AuthPage() {
   return (
     <Suspense fallback={<AuthPageSkeleton />}>
+      {/* Remembers an invite code across the wallet sign-in round trip. */}
+      <ReferralCodeStash />
       <AuthPageClient />
     </Suspense>
   );

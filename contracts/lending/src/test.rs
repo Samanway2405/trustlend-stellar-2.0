@@ -2339,3 +2339,304 @@ fn test_late_repayment_no_reward() {
     let total = loyalty_client.get_total_rewards_distributed();
     assert_eq!(total, 0);
 }
+
+// ─── Referral Rewards integration tests (Issue #266) ──────────────────────
+
+/// Wire a funded referral contract to a fresh lending contract.
+/// Returns (env, lending_id, admin, borrower, collateral_asset, referral_id, token_id).
+fn setup_with_referral() -> (Env, Address, Address, Address, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let collateral_asset = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_multisig_admin(&admin, &admin);
+    client.whitelist_asset(&admin, &collateral_asset);
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let referral_id = env.register(referral_rewards::ReferralRewardsContract, ());
+    let referral_client =
+        referral_rewards::ReferralRewardsContractClient::new(&env, &referral_id);
+
+    referral_client.initialize(
+        &admin,
+        &token_id,
+        &contract_id,
+        &referral_rewards::ReferralConfig {
+            base_bonus: 10_0000000,               // 10 TLND
+            reference_loan_amount: 1_000_0000000, // 1_000 XLM
+            max_size_multiplier_bps: 20_000,
+            min_qualifying_loan: 100_0000000,
+            max_referrals_per_referrer: 0,
+        },
+    );
+
+    soroban_sdk::token::StellarAssetClient::new(&env, &token_id)
+        .mint(&referral_id, &1_000_0000000);
+
+    client.set_referral_contract(&admin, &referral_id);
+
+    (
+        env,
+        contract_id,
+        admin,
+        borrower,
+        collateral_asset,
+        referral_id,
+        token_id,
+    )
+}
+
+#[test]
+fn test_set_referral_contract() {
+    let (env, contract_id, admin, _borrower, _collateral) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let referral = Address::generate(&env);
+    client.set_referral_contract(&admin, &referral);
+    assert_eq!(client.get_referral_contract(), Some(referral));
+}
+
+#[test]
+fn test_set_referral_contract_non_admin_rejected() {
+    let (env, contract_id, _admin, _borrower, _collateral) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let stranger = Address::generate(&env);
+    let referral = Address::generate(&env);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.set_referral_contract(&stranger, &referral);
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_activation_without_referral_contract_works() {
+    // The default configuration has no referral contract set at all.
+    let (env, contract_id, admin, borrower, collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+    let lender = Address::generate(&env);
+
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &create_request_struct(
+            &env,
+            1_000_0000000,
+            30,
+            1500,
+            100_000_0000000,
+            &collateral_asset,
+            100_000_0000000,
+            InterestRateModel::Fixed,
+        ),
+    );
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    assert_eq!(client.get_loan(&loan_id).status, LoanStatus::Active);
+}
+
+#[test]
+fn test_activation_pays_referrer_automatically() {
+    let (env, contract_id, admin, borrower, collateral_asset, referral_id, token_id) =
+        setup_with_referral();
+    let client = LendingContractClient::new(&env, &contract_id);
+    let referral_client =
+        referral_rewards::ReferralRewardsContractClient::new(&env, &referral_id);
+    let lender = Address::generate(&env);
+    let referrer = Address::generate(&env);
+
+    // The friend signs up through the referrer's link.
+    referral_client.register_referral(&borrower, &referrer);
+
+    let loan_amount: i128 = 1_000_0000000;
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &create_request_struct(
+            &env,
+            loan_amount,
+            30,
+            1500,
+            100_000_0000000,
+            &collateral_asset,
+            100_000_0000000,
+            InterestRateModel::Fixed,
+        ),
+    );
+    client.approve_loan(&lender, &loan_id, &1);
+
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+    assert_eq!(token_client.balance(&referrer), 0);
+
+    // Taking out the loan is what triggers the bonus — no separate call.
+    client.activate_loan(&admin, &loan_id);
+
+    assert_eq!(token_client.balance(&referrer), 10_0000000);
+    assert!(referral_client.is_bonus_paid(&borrower));
+    assert_eq!(referral_client.get_referrer_earnings(&referrer), 10_0000000);
+}
+
+#[test]
+fn test_activation_pays_nothing_for_unreferred_borrower() {
+    let (env, contract_id, admin, borrower, collateral_asset, referral_id, _token_id) =
+        setup_with_referral();
+    let client = LendingContractClient::new(&env, &contract_id);
+    let referral_client =
+        referral_rewards::ReferralRewardsContractClient::new(&env, &referral_id);
+    let lender = Address::generate(&env);
+
+    // No register_referral call — this borrower arrived on their own.
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &create_request_struct(
+            &env,
+            1_000_0000000,
+            30,
+            1500,
+            100_000_0000000,
+            &collateral_asset,
+            100_000_0000000,
+            InterestRateModel::Fixed,
+        ),
+    );
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    assert_eq!(client.get_loan(&loan_id).status, LoanStatus::Active);
+    assert_eq!(referral_client.get_total_bonuses_paid(), 0);
+}
+
+#[test]
+fn test_second_loan_by_same_borrower_pays_no_second_bonus() {
+    let (env, contract_id, admin, borrower, collateral_asset, referral_id, token_id) =
+        setup_with_referral();
+    let client = LendingContractClient::new(&env, &contract_id);
+    let referral_client =
+        referral_rewards::ReferralRewardsContractClient::new(&env, &referral_id);
+    let lender = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    let token_client = soroban_sdk::token::Client::new(&env, &token_id);
+
+    referral_client.register_referral(&borrower, &referrer);
+
+    for _ in 0..2 {
+        let loan_id = client.create_loan_request(
+            &borrower,
+            &create_request_struct(
+                &env,
+                1_000_0000000,
+                30,
+                1500,
+                100_000_0000000,
+                &collateral_asset,
+                100_000_0000000,
+                InterestRateModel::Fixed,
+            ),
+        );
+        client.approve_loan(&lender, &loan_id, &1);
+        client.activate_loan(&admin, &loan_id);
+    }
+
+    // One referred friend = one bonus, however many loans they take.
+    assert_eq!(token_client.balance(&referrer), 10_0000000);
+    assert_eq!(referral_client.get_paid_referral_count(&referrer), 1);
+}
+
+#[test]
+fn test_activation_succeeds_when_referral_pool_is_empty() {
+    // A drained reward pool must never block a borrower's loan.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(LendingContract, ());
+    let client = LendingContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let borrower = Address::generate(&env);
+    let lender = Address::generate(&env);
+    let referrer = Address::generate(&env);
+    let collateral_asset = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_multisig_admin(&admin, &admin);
+    client.whitelist_asset(&admin, &collateral_asset);
+
+    let token_id = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let referral_id = env.register(referral_rewards::ReferralRewardsContract, ());
+    let referral_client =
+        referral_rewards::ReferralRewardsContractClient::new(&env, &referral_id);
+    referral_client.initialize(
+        &admin,
+        &token_id,
+        &contract_id,
+        &referral_rewards::ReferralConfig {
+            base_bonus: 10_0000000,
+            reference_loan_amount: 1_000_0000000,
+            max_size_multiplier_bps: 20_000,
+            min_qualifying_loan: 100_0000000,
+            max_referrals_per_referrer: 0,
+        },
+    );
+    // Deliberately no mint — the pool is empty.
+    client.set_referral_contract(&admin, &referral_id);
+    referral_client.register_referral(&borrower, &referrer);
+
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &create_request_struct(
+            &env,
+            1_000_0000000,
+            30,
+            1500,
+            100_000_0000000,
+            &collateral_asset,
+            100_000_0000000,
+            InterestRateModel::Fixed,
+        ),
+    );
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    assert_eq!(client.get_loan(&loan_id).status, LoanStatus::Active);
+    assert_eq!(referral_client.get_total_bonuses_paid(), 0);
+    // Unpaid, so a later top-up still rewards the referrer.
+    assert!(!referral_client.is_bonus_paid(&borrower));
+}
+
+#[test]
+fn test_activation_survives_broken_referral_contract() {
+    // Point the lending contract at an address that is not a contract at all.
+    // try_invoke_contract must swallow the failure.
+    let (env, contract_id, admin, borrower, collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+    let lender = Address::generate(&env);
+
+    client.set_referral_contract(&admin, &Address::generate(&env));
+
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &create_request_struct(
+            &env,
+            1_000_0000000,
+            30,
+            1500,
+            100_000_0000000,
+            &collateral_asset,
+            100_000_0000000,
+            InterestRateModel::Fixed,
+        ),
+    );
+    client.approve_loan(&lender, &loan_id, &1);
+    client.activate_loan(&admin, &loan_id);
+
+    assert_eq!(client.get_loan(&loan_id).status, LoanStatus::Active);
+}
