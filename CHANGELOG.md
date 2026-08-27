@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Collateral price oracle (#267): XLM and BTC prices polled every 5 seconds from
+  CoinGecko, Binance and the Stellar DEX, aggregated by median with outlier
+  rejection, and pushed on-chain. Fallback chain is live → cached → on-chain
+  TWAP → refuse to publish. The liquidation keeper now values positions with the
+  live price instead of a hardcoded constant. See
+  [ORACLE_PRICE_FEEDS.md](ORACLE_PRICE_FEEDS.md).
 - Referral programme (#266): every user gets a unique invite link, and when an
   invited friend's first loan is funded the referrer's bonus is transferred
   automatically by the new `referral_rewards` Soroban contract during

@@ -401,6 +401,44 @@ export async function runLiquidationKeeper(
     );
   }
 
+  // Refresh XLM from the live oracle before valuing anything (Issue #267).
+  // Liquidating against a hardcoded price can seize collateral the market
+  // says is healthy, so a live reading takes precedence over the env constant.
+  // If the oracle has nothing usable we keep the configured value rather than
+  // aborting the run — the existing behaviour, explicitly logged.
+  // Disabled under test (and wherever LIQUIDATION_USE_LIVE_PRICES=false) so a
+  // unit test never reaches out to a real price API.
+  const useLivePrices =
+    process.env.LIQUIDATION_USE_LIVE_PRICES !== "false" &&
+    process.env.NODE_ENV !== "test" &&
+    process.env.VITEST === undefined;
+
+  let liveXlmPriceUsd: number | null = null;
+  if (useLivePrices) {
+    try {
+      const { getLivePriceUsd } = await import("../lib/oracle/live-prices");
+      const livePrice = await getLivePriceUsd("XLM");
+      if (livePrice !== null && livePrice > 0) {
+        liveXlmPriceUsd = livePrice;
+        console.log(`[liquidation-keeper] Using live XLM price $${livePrice}`);
+      } else {
+        console.warn(
+          `[liquidation-keeper] Oracle returned no usable XLM price — ` +
+            `falling back to the configured $${cfg.xlmPriceUsd}.`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[liquidation-keeper] Live price lookup failed; using configured price.",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  // Every valuation below uses this, so the live price applies uniformly.
+  const pricedCfg: KeeperConfig =
+    liveXlmPriceUsd !== null ? { ...cfg, xlmPriceUsd: liveXlmPriceUsd } : cfg;
+
   const candidateIds =
     cfg.source === "db" ? await fetchCandidatesFromDb(cfg) : await fetchCandidatesFromChain(cfg);
   summary.scanned = candidateIds.length;
@@ -413,7 +451,7 @@ export async function runLiquidationKeeper(
         continue;
       }
 
-      const collateralPrice = resolveAssetPrice(cfg, loan.collateralAsset);
+      const collateralPrice = resolveAssetPrice(pricedCfg, loan.collateralAsset);
       if (!collateralPrice) {
         summary.skipped++;
         console.warn(
@@ -430,7 +468,7 @@ export async function runLiquidationKeeper(
       );
       const ltvBps = computeLtvBps({
         remainingDueStroops: loan.remainingDue,
-        xlmPriceUsd: cfg.xlmPriceUsd,
+        xlmPriceUsd: pricedCfg.xlmPriceUsd,
         collateralAmount: loan.collateralAmount,
         collateralDecimals: collateralPrice.decimals,
         collateralPriceUsd: collateralPrice.priceUsd,
