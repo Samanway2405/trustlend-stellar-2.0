@@ -697,7 +697,11 @@ export function TreasuryDashboard() {
                 </label>
                 <select
                   value={proposeActionType}
-                  onChange={(e) => setProposeActionType(e.target.value as any)}
+                  onChange={(e) =>
+                    setProposeActionType(
+                      e.target.value as "distribute" | "collect_fees" | "transfer",
+                    )
+                  }
                   className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 >
                   <option value="distribute">Distribute Treasury (50% Insurance / 50% DAO)</option>

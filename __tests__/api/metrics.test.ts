@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { GET } from "@/app/api/metrics/route";
 
 // Mock the metrics module so we don't hit prom-client internals in tests
@@ -27,7 +28,7 @@ describe("GET /api/metrics", () => {
 
     mockGenerateMetricsResponse.mockResolvedValue(fakeMetrics);
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/metrics"));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
@@ -50,7 +51,7 @@ describe("GET /api/metrics", () => {
 
     mockGenerateMetricsResponse.mockResolvedValue(metricsBlock);
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/metrics"));
     const text = await response.text();
 
     // Every line should be valid Prometheus exposition format:
@@ -68,7 +69,7 @@ describe("GET /api/metrics", () => {
   it("returns 500 when metrics generation fails", async () => {
     mockGenerateMetricsResponse.mockRejectedValue(new Error("Registry error"));
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/metrics"));
 
     expect(response.status).toBe(500);
 
@@ -79,7 +80,7 @@ describe("GET /api/metrics", () => {
   it("returns 500 with generic message when non-error is thrown", async () => {
     mockGenerateMetricsResponse.mockRejectedValue("string error");
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/metrics"));
 
     expect(response.status).toBe(500);
 
@@ -99,7 +100,7 @@ describe("GET /api/metrics", () => {
 
     mockGenerateMetricsResponse.mockResolvedValue(metricsWithMemory);
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/metrics"));
     const text = await response.text();
 
     expect(text).toContain('memory_type="rss"');
@@ -111,7 +112,7 @@ describe("GET /api/metrics", () => {
   it("handles empty metrics gracefully", async () => {
     mockGenerateMetricsResponse.mockResolvedValue("");
 
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/metrics"));
 
     expect(response.status).toBe(200);
 

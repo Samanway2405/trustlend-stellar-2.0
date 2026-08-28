@@ -100,7 +100,7 @@ export async function runDailyReputationRecalculation(): Promise<DailyCalculatio
           const creationTime = loan.created_at ? new Date(loan.created_at).getTime() : 0;
 
           // Check repayment timing from metadata or date
-          if (loan.metadata && typeof loan.metadata === "object" && (loan.metadata as any).is_early) {
+          if (loan.metadata && typeof loan.metadata === "object" && (loan.metadata as { is_early?: boolean }).is_early) {
             earlyCount++;
           } else if (dueTime > 0) {
             // Find latest payment date for this loan
