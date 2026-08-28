@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
+import { getDashboardPath } from "@/lib/auth/roles";
 import { enforceRouteRateLimit } from "@/lib/rate-limit";
 import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
 import { createApplicant, getApplicantId, generateSdkToken } from "@/lib/kyc/provider";

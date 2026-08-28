@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   getConnectedWallet,
+  getStoredWalletProvider,
   signTransactionWithWallet,
 } from "@/lib/stellar/wallet";
+import {
+  getNetworkPassphrase,
+  type StellarWalletProvider,
+} from "@/lib/stellar/wallet-providers";
 import { formatCurrency } from "@/lib/utils/formatting";
 import {
   discoverSep31Anchor,
@@ -602,6 +607,21 @@ export function LenderForms({
   const PLATFORM_WALLET =
     platformAddress ?? process.env.NEXT_PUBLIC_PLATFORM_STELLAR_ADDRESS ?? "";
 
+  // "Add token to wallet" is a Freighter-extension-only affordance — the kit
+  // exposes no equivalent for WalletConnect/xBull/Albedo, so a mobile wallet
+  // user would only ever see it fail. Read the provider after mount: reading
+  // localStorage during render would not match the server-rendered HTML.
+  const [walletProvider, setWalletProvider] =
+    useState<StellarWalletProvider | null>(null);
+  useEffect(() => {
+    setWalletProvider(getStoredWalletProvider());
+  }, [successTx]);
+
+  const lpTokenContractId =
+    process.env.NEXT_PUBLIC_TLEND_TOKEN_CONTRACT_ID?.trim() ?? "";
+  const canAddLpToken = walletProvider === "freighter" && Boolean(lpTokenContractId);
+  const [addTokenStatus, setAddTokenStatus] = useState<string>("");
+
   const handleDeposit = async (poolId: string, amount: number) => {
     setSuccessTx(null);
     if (!PLATFORM_WALLET) {
@@ -961,23 +981,35 @@ export function LenderForms({
           >
             Verify on Stellar Explorer ↗
           </a>
+          {canAddLpToken && (
           <button
             type="button"
             onClick={async () => {
               try {
-                const { isConnected, watchAsset } = await import('@stellar/freighter-api');
-                if (await isConnected()) {
-                  await watchAsset({
-                    assetCode: 'TLP',
-                    assetIssuer: PLATFORM_WALLET || 'GAJ6X3GHTO5XCQ6M5R36B63Y423J4R7G7S2G5L2W33ZMBF4D63Y6Y7R6', // fallback for demo
-                    network: 'TESTNET'
-                  });
-                } else {
-                  alert("Freighter not connected or available.");
+                const { isConnected, addToken } = await import('@stellar/freighter-api');
+                // isConnected() resolves to an object, so it is always truthy —
+                // the boolean has to be read off the `isConnected` field.
+                const connection = await isConnected();
+                if (connection.error || !connection.isConnected) {
+                  setAddTokenStatus("Freighter is not available. Unlock the extension and try again.");
+                  return;
                 }
-              } catch (e: any) {
+                // Freighter v6 replaced watchAsset(code/issuer) with
+                // addToken(contractId) for Soroban tokens.
+                const result = await addToken({
+                  contractId: lpTokenContractId,
+                  networkPassphrase: getNetworkPassphrase(),
+                });
+                setAddTokenStatus(
+                  result.error
+                    ? `Could not add the LP token: ${String(result.error)}`
+                    : "LP token added to Freighter.",
+                );
+              } catch (e) {
                 console.error(e);
-                alert("Failed to add token: " + (e.message || "Unknown error"));
+                setAddTokenStatus(
+                  `Failed to add token: ${e instanceof Error ? e.message : "Unknown error"}`,
+                );
               }
             }}
             style={{
@@ -996,6 +1028,21 @@ export function LenderForms({
           >
             + Add LP Token to Wallet
           </button>
+          )}
+
+          {addTokenStatus ? (
+            <p
+              role="status"
+              style={{
+                marginTop: "0.4rem",
+                fontSize: "0.72rem",
+                textAlign: "center",
+                opacity: 0.8,
+              }}
+            >
+              {addTokenStatus}
+            </p>
+          ) : null}
         </div>
       )}
 

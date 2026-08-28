@@ -2,7 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/server";
+import { getLenderTaxReportData } from "@/lib/lender/tax-report-data";
+import {
+  buildTaxReportRows,
+  summarizeTaxReport,
+  toCsv,
+  taxReportFilename,
+} from "@/lib/lender/tax-report";
 import { enforceRouteRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
