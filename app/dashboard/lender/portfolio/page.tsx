@@ -6,6 +6,8 @@ import { lenderNavLinks } from "@/lib/dashboard/lender-links";
 import { formatCurrency, formatXlmPrecise } from "@/lib/utils/formatting";
 import { TaxReportExportButton } from "@/components/dashboard/TaxReportExportButton";
 import { collectReportYears } from "@/lib/lender/tax-report";
+import { calculateLenderYieldAnalytics } from "@/lib/lender/yield-analytics";
+import { LenderPortfolioYieldAnalytics } from "@/components/dashboard/LenderPortfolioYieldAnalytics";
 
 export default async function LenderPortfolioPage() {
   const { user } = await requireAuthenticatedUser("lender");
@@ -14,25 +16,29 @@ export default async function LenderPortfolioPage() {
   const supabase = await getServerSupabaseClient();
   const srClient = getServiceRoleClient();
 
-  // 1. Fetch Pool Positions
-  const [positionsRes, profileRes] = supabase
+  // 1. Fetch Pool Positions, Profiles, and Lending Pools
+  const [positionsRes, profileRes, poolsRes] = supabase
     ? await Promise.all([
         supabase
           .from("pool_positions")
           .select("id, pool_id, status, principal_amount, earned_interest, opened_at, closed_at")
           .eq("lender_id", user.id)
           .order("opened_at", { ascending: false })
-          .limit(8),
+          .limit(20),
         supabase
           .from("profiles")
           .select("full_name")
           .eq("id", user.id)
           .maybeSingle(),
+        supabase
+          .from("lending_pools")
+          .select("id, name, status, apr_bps, total_liquidity, available_liquidity"),
       ])
-    : [{ data: [] }, { data: null }];
+    : [{ data: [] }, { data: null }, { data: [] }];
 
   const positions = positionsRes.data ?? [];
   const profile = profileRes.data;
+  const pools = poolsRes.data ?? [];
 
   // 2. Fetch Direct Marketplace Loans for Profit
   // P2P Funds
@@ -58,11 +64,18 @@ export default async function LenderPortfolioPage() {
     } catch { return false; }
   });
 
+  // Calculate comprehensive yield analytics & pool breakdown (Issue #256)
+  const yieldAnalytics = calculateLenderYieldAnalytics({
+    positions,
+    pools,
+    p2pFunds: p2pFunds ?? [],
+    p2pRepays: lenderRepays,
+  });
+
   // Calculate Marketplace net
   const marketplaceDeployed = (p2pFunds ?? []).reduce((s, t) => s + Number(t.amount), 0);
   const marketplaceReceived = lenderRepays.reduce((s, t) => s + Number(t.amount), 0);
   const marketplaceProfit = Math.max(0, marketplaceReceived - marketplaceDeployed);
-
   const poolProfit = positions.reduce((s, r) => s + Number(r.earned_interest ?? 0), 0);
 
   // Years the lender actually has activity in, for the tax-export picker.
@@ -78,15 +91,18 @@ export default async function LenderPortfolioPage() {
   return (
     <WorkspaceFrame
       roleLabel="Lender Dashboard"
-      heading="Portfolio & Profits"
-      description="Track total profits across automated pools and direct marketplace loans."
+      heading="Portfolio & Yield Analytics"
+      description="Track historical APY yield, projected future returns, and earnings breakdown across lending pools."
       email={user.email ?? null}
       userName={String(user.user_metadata?.full_name ?? profile?.full_name ?? "")}
       metrics={presentLenderMetrics(metrics)}
       currentPath="/dashboard/lender/portfolio"
       links={lenderNavLinks}
     >
-      <div className="workspace-stack">
+      <div className="workspace-stack" style={{ gap: "1.75rem" }}>
+
+        {/* ── Portfolio Yield Analytics & Pool Breakdown (Issue #256) ── */}
+        <LenderPortfolioYieldAnalytics analytics={yieldAnalytics} />
 
         {/* Tax report export (issue #271) */}
         <article className="workspace-card workspace-card--full">
@@ -101,7 +117,7 @@ export default async function LenderPortfolioPage() {
           >
             <div>
               <h2 className="workspace-card-title" style={{ margin: 0 }}>
-                Tax Report
+                Tax Report Export
               </h2>
               <p className="workspace-card-copy" style={{ margin: "0.35rem 0 0", maxWidth: "44rem" }}>
                 Download a CSV of every interest payment you have earned — pool
@@ -114,7 +130,7 @@ export default async function LenderPortfolioPage() {
           </div>
         </article>
 
-        {/* Profit Breakdown */}
+        {/* High-level Profit Summary */}
         <section className="workspace-grid workspace-grid--two">
            <article className="workspace-card" style={{ background: "linear-gradient(135deg, #7e2fd0, #5a1fad)", color: "#fff", border: "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
@@ -138,7 +154,7 @@ export default async function LenderPortfolioPage() {
                  <div style={{ fontSize: "2rem" }}>🏦</div>
                  <div>
                     <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Pool Profits</h2>
-                    <p style={{ margin: 0, opacity: 0.8, fontSize: "0.8rem" }}>Automated E2E Liquidity</p>
+                    <p style={{ margin: 0, opacity: 0.8, fontSize: "0.8rem" }}>Automated Liquidity Pools</p>
                  </div>
               </div>
               <p style={{ fontSize: "2rem", fontWeight: 800, margin: "0 0 0.5rem" }}>
@@ -149,44 +165,6 @@ export default async function LenderPortfolioPage() {
                  <span>Positions: {positions.length}</span>
               </div>
            </article>
-        </section>
-
-        <section className="workspace-grid">
-          {(positions ?? []).length === 0 && (p2pFunds ?? []).length === 0 ? (
-            <article className="workspace-card workspace-card--full">
-              <h2 className="workspace-card-title">No portfolio positions yet</h2>
-              <p className="workspace-card-copy">
-                Once capital is deployed, your core exposure and earnings will appear here.
-              </p>
-            </article>
-          ) : null}
-
-          {positions.length > 0 && (
-             <article className="workspace-card workspace-card--full">
-               <h2 className="workspace-card-title" style={{ marginBottom: "1rem" }}>Active Pool Positions</h2>
-               <div className="workspace-table-wrap">
-                  <table className="workspace-table">
-                     <thead>
-                        <tr><th>Pool ID</th><th>Status</th><th>Principal</th><th>Earned Interest</th></tr>
-                     </thead>
-                     <tbody>
-                        {positions.map((position) => (
-                          <tr key={String(position.id)}>
-                             <td style={{ fontFamily: "monospace" }}>#{String(position.pool_id).slice(0, 8)}</td>
-                             <td>
-                               <span style={{ padding: "0.15rem 0.5rem", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: 600, background: "rgba(34,207,157,0.12)", color: "#22cf9d" }}>
-                                  {String(position.status).toUpperCase()}
-                               </span>
-                             </td>
-                             <td>{formatCurrency(Number(position.principal_amount ?? 0))}</td>
-                             <td style={{ color: "#22cf9d", fontWeight: "bold" }}>+{formatXlmPrecise(Number(position.earned_interest ?? 0))}</td>
-                          </tr>
-                        ))}
-                     </tbody>
-                  </table>
-               </div>
-             </article>
-          )}
         </section>
       </div>
     </WorkspaceFrame>
