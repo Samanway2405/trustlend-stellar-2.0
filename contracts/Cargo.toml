@@ -16,6 +16,7 @@ members = [
     "borrower_loyalty",
     "referral_rewards",
     "zk_credit_verifier",
+    "usdc_lending_pool",
 ]
 resolver = "2"
 
