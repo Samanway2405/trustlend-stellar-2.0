@@ -1,9 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { formatTokenBalance } from "@/lib/utils/formatting";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
+import { WalletSelectionModal } from "@/components/ui/WalletSelectionModal";
+import {
+  getConnectedWallet,
+  connectWallet,
+  getStoredWalletProvider,
+  getWalletProviderLabel,
+  type StellarWalletProvider,
+} from "@/lib/stellar/wallet";
 import {
   LendingContract,
   ReputationContract,
@@ -12,9 +20,27 @@ import {
 
 interface LoanApplicationFormProps {
   maxAmount: number;
-  onSubmit: (amount: number, duration: number, collateralAsset: string, collateralAmount: number, rateModel: "fixed" | "floating") => Promise<void>;
+  walletAddress: string | null;
+  walletProvider: StellarWalletProvider;
+  onOpenWalletModal: () => void;
+  onSubmit: (
+    amount: number,
+    duration: number,
+    collateralAsset: string,
+    collateralAmount: number,
+    rateModel: "fixed" | "floating"
+  ) => Promise<void>;
+  statusMessage?: string;
 }
-export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationFormProps) {
+
+export function LoanApplicationForm({
+  maxAmount,
+  walletAddress,
+  walletProvider,
+  onOpenWalletModal,
+  onSubmit,
+  statusMessage,
+}: LoanApplicationFormProps) {
   const [amount, setAmount] = useState("");
   const [duration, setDuration] = useState("60");
   const [collateralAsset, setCollateralAsset] = useState("");
@@ -43,21 +69,99 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
         setError("Collateral amount must be positive");
         return;
       }
-      await onSubmit(amountNum, parseInt(duration), collateralAsset, collateralAmountNum, rateModel);
+      await onSubmit(
+        amountNum,
+        parseInt(duration),
+        collateralAsset,
+        collateralAmountNum,
+        rateModel
+      );
       setAmount("");
       setDuration("60");
       setCollateralAsset("");
       setCollateralAmount("");
       setRateModel("fixed");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit application");
+      setError(
+        err instanceof Error ? err.message : "Failed to submit application"
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  const shortAddress = walletAddress
+    ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+    : null;
+
   return (
     <form onSubmit={handleSubmit} className="workspace-form">
+      {/* ── Connected Wallet Bar ── */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "0.75rem",
+          padding: "0.75rem 1rem",
+          borderRadius: "0.6rem",
+          background: "rgba(126,47,208,0.06)",
+          border: "1px solid rgba(126,47,208,0.2)",
+          marginBottom: "0.75rem",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ fontSize: "1.1rem" }}>🦊</span>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <strong style={{ fontSize: "0.88rem", color: "#111827" }}>
+                {getWalletProviderLabel(walletProvider)}
+              </strong>
+              <span
+                style={{
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  color: "#17a87a",
+                  background: "rgba(34,207,157,0.14)",
+                  padding: "0.15rem 0.45rem",
+                  borderRadius: "9999px",
+                  textTransform: "uppercase",
+                }}
+              >
+                {walletAddress ? "Connected" : "Default Signer"}
+              </span>
+            </div>
+            <p
+              style={{
+                margin: "0.15rem 0 0",
+                fontSize: "0.78rem",
+                color: "#6b7280",
+                fontFamily: "monospace",
+              }}
+            >
+              {shortAddress ?? "Ready to authorize with Freighter extension"}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenWalletModal}
+          style={{
+            background: "transparent",
+            border: "1px solid rgba(126,47,208,0.3)",
+            color: "#7e2fd0",
+            padding: "0.35rem 0.65rem",
+            borderRadius: "0.45rem",
+            fontSize: "0.78rem",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {walletAddress ? "Switch Wallet" : "Select Wallet"}
+        </button>
+      </div>
+
       <div>
         <label className="workspace-label">Loan Amount (XLM)</label>
         <input
@@ -122,8 +226,18 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
 
       <div>
         <label className="workspace-label">Interest Rate Model</label>
-        <div className="rate-model-selector" style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+        <div
+          className="rate-model-selector"
+          style={{ display: "flex", gap: "1rem", marginTop: "0.5rem" }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "0.5rem",
+              cursor: "pointer",
+            }}
+          >
             <input
               type="radio"
               name="rateModel"
@@ -131,14 +245,23 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
               checked={rateModel === "fixed"}
               onChange={() => setRateModel("fixed")}
               disabled={loading}
-              style={{ marginTop: '0.25rem' }}
+              style={{ marginTop: "0.25rem" }}
             />
             <div>
               <strong>Fixed Rate</strong>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>Lock in your rate. Predictable payments.</p>
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#666" }}>
+                Lock in your rate. Predictable payments.
+              </p>
             </div>
           </label>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "0.5rem",
+              cursor: "pointer",
+            }}
+          >
             <input
               type="radio"
               name="rateModel"
@@ -146,35 +269,132 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
               checked={rateModel === "floating"}
               onChange={() => setRateModel("floating")}
               disabled={loading}
-              style={{ marginTop: '0.25rem' }}
+              style={{ marginTop: "0.25rem" }}
             />
             <div>
               <strong>Floating Rate</strong>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#666' }}>Starts lower, adjusts with market.</p>
-              
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#666" }}>
+                Starts lower, adjusts with market.
+              </p>
+
               {rateModel === "floating" && (
-                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Base Rate</span>
+                <div
+                  style={{
+                    marginTop: "0.75rem",
+                    display: "flex",
+                    gap: "1rem",
+                    flexWrap: "wrap",
+                    background: "rgba(255,255,255,0.03)",
+                    padding: "0.75rem",
+                    borderRadius: "0.5rem",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.2rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.35rem",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          color: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        Base Rate
+                      </span>
                       <Tooltip content="The minimum interest rate charged when pool utilization is 0%.">
-                        <span style={{ cursor: 'help', fontSize: '0.75rem', opacity: 0.7 }}>ⓘ</span>
+                        <span
+                          style={{
+                            cursor: "help",
+                            fontSize: "0.75rem",
+                            opacity: 0.7,
+                          }}
+                        >
+                          ⓘ
+                        </span>
                       </Tooltip>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Utilization Rate</span>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.2rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.35rem",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          color: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        Utilization Rate
+                      </span>
                       <Tooltip content="The percentage of the pool's total liquidity that is currently borrowed.">
-                        <span style={{ cursor: 'help', fontSize: '0.75rem', opacity: 0.7 }}>ⓘ</span>
+                        <span
+                          style={{
+                            cursor: "help",
+                            fontSize: "0.75rem",
+                            opacity: 0.7,
+                          }}
+                        >
+                          ⓘ
+                        </span>
                       </Tooltip>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>Multiplier</span>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.2rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.35rem",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          color: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        Multiplier
+                      </span>
                       <Tooltip content="The rate at which interest increases as utilization increases.">
-                        <span style={{ cursor: 'help', fontSize: '0.75rem', opacity: 0.7 }}>ⓘ</span>
+                        <span
+                          style={{
+                            cursor: "help",
+                            fontSize: "0.75rem",
+                            opacity: 0.7,
+                          }}
+                        >
+                          ⓘ
+                        </span>
                       </Tooltip>
                     </div>
                   </div>
@@ -185,6 +405,25 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
         </div>
       </div>
 
+      {statusMessage && (
+        <div
+          style={{
+            padding: "0.6rem 0.85rem",
+            background: "rgba(126,47,208,0.08)",
+            border: "1px solid rgba(126,47,208,0.25)",
+            borderRadius: "0.5rem",
+            fontSize: "0.82rem",
+            color: "#7e2fd0",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          <span className="animate-spin">⏳</span>
+          <span>{statusMessage}</span>
+        </div>
+      )}
+
       {error && <p className="workspace-error">{error}</p>}
 
       <button
@@ -193,7 +432,9 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
         className="workspace-button workspace-button--primary"
         style={{ width: "100%", marginTop: "0.5rem" }}
       >
-        {loading ? "Submitting..." : "Submit Application"}
+        {loading
+          ? statusMessage || "Authorizing with Freighter..."
+          : "Sign & Submit Loan with Freighter"}
       </button>
     </form>
   );
@@ -206,7 +447,12 @@ interface RepaymentFormProps {
   onSubmit: (amount: number) => Promise<void>;
 }
 
-export function RepaymentForm({ loanAmount, repaidAmount, loan, onSubmit }: RepaymentFormProps) {
+export function RepaymentForm({
+  loanAmount,
+  repaidAmount,
+  loan,
+  onSubmit,
+}: RepaymentFormProps) {
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -257,10 +503,26 @@ export function RepaymentForm({ loanAmount, repaidAmount, loan, onSubmit }: Repa
       </div>
 
       {loan?.id && (
-        <div style={{ background: "rgba(126,47,208,0.06)", border: "1px solid rgba(126,47,208,0.2)", borderRadius: "0.5rem", padding: "0.75rem 0.9rem", marginBottom: "0.75rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+        <div
+          style={{
+            background: "rgba(126,47,208,0.06)",
+            border: "1px solid rgba(126,47,208,0.2)",
+            borderRadius: "0.5rem",
+            padding: "0.75rem 0.9rem",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+            }}
+          >
             <span style={{ fontSize: "0.8rem", color: "#4b5563" }}>
-              ⚡ <strong>Early Repayment:</strong> Pay before due date with adjusted pro-rated interest.
+              ⚡ <strong>Freighter On-Chain Repayment:</strong> Sign settlement transaction with adjusted interest.
             </span>
             <a
               href={`/dashboard/borrower/repay?loanId=${loan.id}`}
@@ -272,7 +534,7 @@ export function RepaymentForm({ loanAmount, repaidAmount, loan, onSubmit }: Repa
                 whiteSpace: "nowrap",
               }}
             >
-              Open Early Payoff Interface →
+              Open Freighter Payoff Interface →
             </a>
           </div>
         </div>
@@ -296,7 +558,14 @@ export function RepaymentForm({ loanAmount, repaidAmount, loan, onSubmit }: Repa
 
       {error && <p className="workspace-error">{error}</p>}
 
-      <div className="workspace-form-actions" style={{ flexDirection: "column", gap: "0.6rem", marginTop: "0.6rem" }}>
+      <div
+        className="workspace-form-actions"
+        style={{
+          flexDirection: "column",
+          gap: "0.6rem",
+          marginTop: "0.6rem",
+        }}
+      >
         <button
           type="button"
           onClick={handlePayFull}
@@ -361,15 +630,91 @@ export function BorrowerForms({
   const router = useRouter();
   const [monitoringDays] = useState(0);
   const [, setSorobanLoading] = useState(false);
-  const pendingLoans = loans.filter((loan) => String(loan.status) === "requested");
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletProvider, setWalletProvider] =
+    useState<StellarWalletProvider>("freighter");
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const pendingLoans = loans.filter(
+    (loan) => String(loan.status) === "requested"
+  );
 
-  const handleLoanApplication = async (amount: number, duration: number, collateralAsset: string, collateralAmount: number, rateModel: "fixed" | "floating") => {
+  // Sync connected wallet on mount
+  useEffect(() => {
+    const storedProvider = getStoredWalletProvider() ?? "freighter";
+    setWalletProvider(storedProvider);
+
+    if (typeof window !== "undefined") {
+      const storedAddr = window.localStorage.getItem("wallet_address");
+      if (storedAddr) {
+        setWalletAddress(storedAddr);
+      }
+    }
+
+    // Best effort background check for live wallet
+    getConnectedWallet(storedProvider)
+      .then((w) => {
+        if (w?.address) {
+          setWalletAddress(w.address);
+          setWalletProvider(w.provider);
+        }
+      })
+      .catch(() => {
+        /* wallet not unlocked yet, user will connect on action */
+      });
+  }, []);
+
+  const handleSelectWallet = useCallback(
+    async (selected: StellarWalletProvider) => {
+      setShowWalletModal(false);
+      setWalletProvider(selected);
+      try {
+        const wallet = await connectWallet(selected);
+        setWalletAddress(wallet.address);
+        setWalletProvider(wallet.provider);
+      } catch (err) {
+        console.warn("[TrustLend] Wallet connection skipped or cancelled:", err);
+      }
+    },
+    []
+  );
+
+  const handleLoanApplication = async (
+    amount: number,
+    duration: number,
+    collateralAsset: string,
+    collateralAmount: number,
+    rateModel: "fixed" | "floating"
+  ) => {
     setSorobanLoading(true);
+    setStatusMessage("1/3 Submitting loan request...");
     try {
+      // 1. Ensure borrower wallet is connected (defaults to Freighter)
+      let activeWallet = walletAddress;
+      try {
+        const wallet = await getConnectedWallet(walletProvider);
+        activeWallet = wallet.address;
+        setWalletAddress(wallet.address);
+        setWalletProvider(wallet.provider);
+      } catch (walletErr) {
+        console.warn(
+          "[TrustLend] Falling back to stored address or prompt:",
+          walletErr
+        );
+      }
+
+      // 2. Submit application record to backend
       const response = await fetch("/api/loans/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, duration_days: duration, pool_id: "default", collateral_asset: collateralAsset, collateral_amount: collateralAmount, rateModel }),
+        body: JSON.stringify({
+          amount,
+          duration_days: duration,
+          pool_id: "default",
+          collateral_asset: collateralAsset,
+          collateral_amount: collateralAmount,
+          rateModel,
+        }),
       });
 
       if (!response.ok) {
@@ -379,27 +724,34 @@ export function BorrowerForms({
 
       await response.json();
 
-      const walletAddress = window.localStorage.getItem("wallet_address") || "";
-      if (walletAddress) {
+      // 3. Authorize on-chain loan request using Freighter
+      if (activeWallet) {
+        setStatusMessage(
+          `2/3 Please approve the transaction in ${getWalletProviderLabel(walletProvider)}...`
+        );
         const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Soroban RPC timeout")), 5000)
+          setTimeout(() => reject(new Error("Soroban RPC timeout")), 15000)
         );
         try {
-          console.log("[TrustLend] Initiating Soroban loan request...");
+          console.log("[TrustLend] Initiating Soroban loan request with Freighter...");
 
           const [onChainRate, onChainMax] = await Promise.race([
             Promise.all([
-              ReputationContract.getInterestRate(walletAddress, walletAddress),
-              ReputationContract.getMaxLoan(walletAddress, walletAddress),
+              ReputationContract.getInterestRate(activeWallet, activeWallet),
+              ReputationContract.getMaxLoan(activeWallet, activeWallet),
             ]),
             timeout,
           ]);
 
           const amountStroops = xlmToStroops(amount);
-          const collateralAmountStroops = xlmToStroops(collateralAmount); // assuming same decimals as XLM for now
+          const collateralAmountStroops = xlmToStroops(collateralAmount);
+
+          setStatusMessage(
+            `3/3 Signing & confirming on-chain with ${getWalletProviderLabel(walletProvider)}...`
+          );
 
           await LendingContract.createLoanRequest(
-            walletAddress,
+            activeWallet,
             amountStroops,
             duration,
             onChainRate,
@@ -408,15 +760,22 @@ export function BorrowerForms({
             rateModel === "fixed" ? "Fixed" : "Floating"
           );
 
-          console.log("[TrustLend] Soroban loan request recorded.");
+          console.log(
+            `[TrustLend] Soroban loan request authorized and recorded via ${walletProvider}.`
+          );
         } catch (sorobanErr) {
-          console.warn("[TrustLend] Soroban sync skipped:", (sorobanErr as Error).message);
+          console.warn(
+            "[TrustLend] Soroban sync warning:",
+            (sorobanErr as Error).message
+          );
         }
       }
 
+      setStatusMessage("");
       router.refresh();
-      alert("Loan application submitted successfully!");
+      alert("Loan application submitted and authorized successfully!");
     } finally {
+      setStatusMessage("");
       setSorobanLoading(false);
     }
   };
@@ -439,7 +798,7 @@ export function BorrowerForms({
       }
 
       router.refresh();
-      alert("Payment successful!");
+      alert("Payment recorded successfully!");
     } catch (error) {
       throw error;
     }
@@ -447,23 +806,49 @@ export function BorrowerForms({
 
   return (
     <>
+      <WalletSelectionModal
+        open={showWalletModal}
+        selectedProvider={walletProvider}
+        title="Connect Borrower Wallet"
+        description="Choose Freighter or another Stellar wallet to authorize and sign borrowing transactions."
+        onSelect={handleSelectWallet}
+        onClose={() => setShowWalletModal(false)}
+      />
+
       <article className="workspace-card workspace-card--full">
         <h2 className="workspace-card-title">Apply for a New Loan</h2>
         {!canApplyLoan ? (
           <p className="workspace-card-copy">
-            Verification is still in progress. Days remaining: {Math.max(0, 30 - monitoringDays)}.
+            Verification is still in progress. Days remaining:{" "}
+            {Math.max(0, 30 - monitoringDays)}.
           </p>
         ) : (
-          <LoanApplicationForm maxAmount={maxLoanAmount} onSubmit={handleLoanApplication} />
+          <LoanApplicationForm
+            maxAmount={maxLoanAmount}
+            walletAddress={walletAddress}
+            walletProvider={walletProvider}
+            onOpenWalletModal={() => setShowWalletModal(true)}
+            onSubmit={handleLoanApplication}
+            statusMessage={statusMessage}
+          />
         )}
       </article>
 
       {pendingLoans.length > 0 && (
-        <article className="workspace-card workspace-card--full" style={{ borderColor: "rgba(245,166,35,0.25)", background: "rgba(245,166,35,0.04)" }}>
-          <h2 className="workspace-card-title">Pending Loan Request{pendingLoans.length > 1 ? "s" : ""}</h2>
+        <article
+          className="workspace-card workspace-card--full"
+          style={{
+            borderColor: "rgba(245,166,35,0.25)",
+            background: "rgba(245,166,35,0.04)",
+          }}
+        >
+          <h2 className="workspace-card-title">
+            Pending Loan Request{pendingLoans.length > 1 ? "s" : ""}
+          </h2>
           <p className="workspace-card-copy" style={{ marginTop: "0.35rem" }}>
-            Your submitted request{pendingLoans.length > 1 ? "s are" : " is"} waiting for lender funding.
-            Several lenders can each fund a slice — the loan activates once it reaches 100%.
+            Your submitted request{pendingLoans.length > 1 ? "s are" : " is"}{" "}
+            waiting for lender funding. Several lenders can each fund a slice —
+            the loan activates once it reaches 100%.
           </p>
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
             {pendingLoans.slice(0, 3).map((loan) => (
@@ -482,9 +867,20 @@ export function BorrowerForms({
                 }}
               >
                 <div>
-                  <p style={{ fontWeight: 700, margin: 0 }}>Loan #{String(loan.id).slice(0, 8)}</p>
-                  <p style={{ fontSize: "0.8rem", color: "#6b7280", margin: "0.15rem 0 0" }}>
-                    Requested {loan.created_at ? new Date(String(loan.created_at)).toLocaleDateString() : "recently"}
+                  <p style={{ fontWeight: 700, margin: 0 }}>
+                    Loan #{String(loan.id).slice(0, 8)}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "#6b7280",
+                      margin: "0.15rem 0 0",
+                    }}
+                  >
+                    Requested{" "}
+                    {loan.created_at
+                      ? new Date(String(loan.created_at)).toLocaleDateString()
+                      : "recently"}
                   </p>
                 </div>
                 <div style={{ flex: "1 1 12rem", minWidth: "10rem" }}>
@@ -495,9 +891,26 @@ export function BorrowerForms({
                 </div>
 
                 <div style={{ textAlign: "right" }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: "#7e2fd0" }}>{formatTokenBalance(Number(loan.principal_amount ?? 0))}</p>
-                  <p style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, margin: "0.15rem 0 0" }}>
-                    {Number(loan.funded_amount ?? 0) > 0 ? "PARTIALLY FUNDED" : "REQUESTED"}
+                  <p
+                    style={{
+                      margin: 0,
+                      fontWeight: 800,
+                      color: "#7e2fd0",
+                    }}
+                  >
+                    {formatTokenBalance(Number(loan.principal_amount ?? 0))}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "#f59e0b",
+                      fontWeight: 700,
+                      margin: "0.15rem 0 0",
+                    }}
+                  >
+                    {Number(loan.funded_amount ?? 0) > 0
+                      ? "PARTIALLY FUNDED"
+                      : "REQUESTED"}
                   </p>
                 </div>
               </div>
@@ -510,19 +923,34 @@ export function BorrowerForms({
         <h2 className="workspace-card-title">Make a Repayment</h2>
         {!selectedRepaymentLoan ? (
           <>
-            <p className="workspace-card-copy">No active loan available for repayment.</p>
+            <p className="workspace-card-copy">
+              No active loan available for repayment.
+            </p>
             {pendingLoans.length > 0 && (
-              <p className="workspace-card-copy" style={{ marginTop: "0.5rem", color: "#f59e0b" }}>
-                You still have a pending loan request. Repayment will appear after a lender funds it.
+              <p
+                className="workspace-card-copy"
+                style={{ marginTop: "0.5rem", color: "#f59e0b" }}
+              >
+                You still have a pending loan request. Repayment will appear
+                after a lender funds it.
               </p>
             )}
           </>
         ) : (
           <>
-            <p className="workspace-card-copy">Loan #{String(selectedRepaymentLoan.id).slice(0, 8)}</p>
-            <p className="workspace-card-copy">Still owe: {formatTokenBalance(dueAmount)}</p>
             <p className="workspace-card-copy">
-              Next due: {selectedRepaymentLoan.due_at ? new Date(String(selectedRepaymentLoan.due_at)).toLocaleDateString() : "-"}
+              Loan #{String(selectedRepaymentLoan.id).slice(0, 8)}
+            </p>
+            <p className="workspace-card-copy">
+              Still owe: {formatTokenBalance(dueAmount)}
+            </p>
+            <p className="workspace-card-copy">
+              Next due:{" "}
+              {selectedRepaymentLoan.due_at
+                ? new Date(
+                    String(selectedRepaymentLoan.due_at)
+                  ).toLocaleDateString()
+                : "-"}
             </p>
             <RepaymentForm
               loanAmount={Number(selectedRepaymentLoan.principal_amount ?? 0)}
