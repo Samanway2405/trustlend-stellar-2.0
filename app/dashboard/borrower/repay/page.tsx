@@ -8,7 +8,14 @@ import { Badge } from "@/components/ui/Badge";
 import { formatCurrency } from "@/lib/utils/formatting";
 import { getFundingProgress } from "@/lib/loans/funding";
 
-export default async function BorrowerRepayPage() {
+export default async function BorrowerRepayPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ loanId?: string }> | { loanId?: string };
+}) {
+  const resolvedParams = searchParams ? await searchParams : {};
+  const targetLoanId = resolvedParams?.loanId;
+
   const { user } = await requireAuthenticatedUser("borrower");
   const metrics  = await getBorrowerDashboardMetrics(user.id);
 
@@ -47,7 +54,9 @@ export default async function BorrowerRepayPage() {
   // Statuses: "funded" (just funded by lender), "active" (repayment in progress)
   const REPAYABLE_STATUSES = ["active", "funded", "approved"];
   const repayableLoans = normalizedLoans.filter((l) => REPAYABLE_STATUSES.includes(String(l.status)));
-  const repayableLoan  = repayableLoans[0] ?? null;
+  const repayableLoan = targetLoanId
+    ? repayableLoans.find((l) => String(l.id) === targetLoanId) ?? repayableLoans[0] ?? null
+    : repayableLoans[0] ?? null;
   const pendingLoans = normalizedLoans.filter((l) => String(l.status) === "requested");
   const dueAmount = repayableLoan
     ? Math.max(0, Number(repayableLoan.principal_amount ?? 0) - Number(repayableLoan.repaid_amount ?? 0))
@@ -57,7 +66,7 @@ export default async function BorrowerRepayPage() {
     <WorkspaceFrame
       roleLabel="Borrower Dashboard"
       heading="Repay Loan"
-      description="Make a repayment on your active loan. Each repayment increases your Trust Score."
+      description="Make an early repayment on your active loan to save on interest and boost your Trust Score."
       email={user.email ?? null}
       userName={String(user.user_metadata?.full_name ?? profile?.full_name ?? "")}
       metrics={presentBorrowerMetrics(metrics)}
@@ -83,9 +92,47 @@ export default async function BorrowerRepayPage() {
             {/* Trust score incentive */}
             <article className="workspace-card workspace-card--full" style={{ background: "rgba(34,207,157,0.04)", borderColor: "rgba(34,207,157,0.2)" }}>
               <p style={{ fontSize: "0.875rem", color: "#20bd8e", fontWeight: 600, margin: 0 }}>
-                💡 Each on-time repayment earns you <strong>+5 Trust Points</strong>. Fully repaying earns <strong>+20 points</strong> and increases your credit limit.
+                💡 Each on-time repayment earns you <strong>+5 Trust Points</strong>. Early repayment earns <strong>+30 points</strong>, saves adjusted interest, and increases your credit limit.
               </p>
             </article>
+
+            {/* Multiple active loans switcher */}
+            {repayableLoans.length > 1 && (
+              <article className="workspace-card workspace-card--full" style={{ padding: "1rem" }}>
+                <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#4b5563", marginBottom: "0.6rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  Select Active Loan to Repay ({repayableLoans.length} active)
+                </h3>
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                  {repayableLoans.map((l) => {
+                    const isSelected = String(l.id) === String(repayableLoan.id);
+                    return (
+                      <a
+                        key={String(l.id)}
+                        href={`/dashboard/borrower/repay?loanId=${l.id}`}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.4rem",
+                          padding: "0.5rem 0.85rem",
+                          borderRadius: "0.5rem",
+                          textDecoration: "none",
+                          fontSize: "0.82rem",
+                          fontWeight: 700,
+                          border: isSelected ? "2px solid #7e2fd0" : "1px solid #e5e7eb",
+                          background: isSelected ? "rgba(126,47,208,0.08)" : "#fff",
+                          color: isSelected ? "#7e2fd0" : "#4b5563",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span>Loan #{String(l.id).slice(0, 8)}</span>
+                        <span style={{ fontWeight: 800 }}>{formatCurrency(Number(l.principal_amount))}</span>
+                        {isSelected && <span style={{ color: "#7e2fd0" }}>✓</span>}
+                      </a>
+                    );
+                  })}
+                </div>
+              </article>
+            )}
 
             <BorrowerRepayWidget
               loan={{
@@ -93,6 +140,9 @@ export default async function BorrowerRepayPage() {
                 principal_amount: Number(repayableLoan.principal_amount),
                 repaid_amount: Number(repayableLoan.repaid_amount ?? 0),
                 due_at: repayableLoan.due_at ? String(repayableLoan.due_at) : null,
+                created_at: repayableLoan.created_at ? String(repayableLoan.created_at) : null,
+                apr_bps: Number(repayableLoan.apr_bps ?? 1200),
+                duration_days: Number(repayableLoan.duration_days ?? 30),
               }}
               dueAmount={dueAmount}
             />
@@ -105,29 +155,57 @@ export default async function BorrowerRepayPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid #eef0f8" }}>
-                        {["Loan ID", "Amount", "Status", "Repaid", "Due Date"].map((h) => (
+                        {["Loan ID", "Amount", "Status", "Repaid", "Due Date", "Action"].map((h) => (
                           <th key={h} style={{ textAlign: "left", padding: "0.6rem 0.75rem", fontSize: "0.72rem", fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {normalizedLoans.map((loan) => (
-                        <tr key={String(loan.id)} style={{ borderBottom: "1px solid #f9fafb" }}>
-                          <td style={{ padding: "0.75rem", fontFamily: "monospace", fontSize: "0.8rem", color: "#6b7280" }}>{String(loan.id).slice(0, 8)}</td>
-                          <td style={{ padding: "0.75rem", fontWeight: 700 }}>{formatCurrency(Number(loan.principal_amount))}</td>
-                          <td style={{ padding: "0.75rem" }}>
-                            <Badge variant={
-                              (loan.status === "active" || loan.status === "funded") ? "green"  :
-                              loan.status === "repaid"    ? "gold"   :
-                              loan.status === "requested" ? "yellow" : "blue"
-                            }>
-                              {String(loan.status).toUpperCase()}
-                            </Badge>
-                          </td>
-                          <td style={{ padding: "0.75rem" }}>{formatCurrency(Number(loan.repaid_amount ?? 0))}</td>
-                          <td style={{ padding: "0.75rem" }}>{loan.due_at ? new Date(String(loan.due_at)).toLocaleDateString() : "—"}</td>
-                        </tr>
-                      ))}
+                      {normalizedLoans.map((loan) => {
+                        const isLoanRepayable = REPAYABLE_STATUSES.includes(String(loan.status));
+                        return (
+                          <tr key={String(loan.id)} style={{ borderBottom: "1px solid #f9fafb" }}>
+                            <td style={{ padding: "0.75rem", fontFamily: "monospace", fontSize: "0.8rem", color: "#6b7280" }}>{String(loan.id).slice(0, 8)}</td>
+                            <td style={{ padding: "0.75rem", fontWeight: 700 }}>{formatCurrency(Number(loan.principal_amount))}</td>
+                            <td style={{ padding: "0.75rem" }}>
+                              <Badge variant={
+                                (loan.status === "active" || loan.status === "funded") ? "green"  :
+                                loan.status === "repaid"    ? "gold"   :
+                                loan.status === "requested" ? "yellow" : "blue"
+                              }>
+                                {String(loan.status).toUpperCase()}
+                              </Badge>
+                            </td>
+                            <td style={{ padding: "0.75rem" }}>{formatCurrency(Number(loan.repaid_amount ?? 0))}</td>
+                            <td style={{ padding: "0.75rem" }}>{loan.due_at ? new Date(String(loan.due_at)).toLocaleDateString() : "—"}</td>
+                            <td style={{ padding: "0.75rem" }}>
+                              {isLoanRepayable ? (
+                                <a
+                                  href={`/dashboard/borrower/repay?loanId=${loan.id}`}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    padding: "0.3rem 0.65rem",
+                                    borderRadius: "0.4rem",
+                                    background: String(loan.id) === String(repayableLoan.id) ? "rgba(126,47,208,0.12)" : "linear-gradient(135deg,#7e2fd0,#5a1fad)",
+                                    color: String(loan.id) === String(repayableLoan.id) ? "#7e2fd0" : "#fff",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 700,
+                                    textDecoration: "none",
+                                    border: String(loan.id) === String(repayableLoan.id) ? "1px solid rgba(126,47,208,0.3)" : "none",
+                                  }}
+                                >
+                                  {String(loan.id) === String(repayableLoan.id) ? "Current Loan" : "⚡ Repay Early"}
+                                </a>
+                              ) : loan.status === "repaid" ? (
+                                <span style={{ fontSize: "0.75rem", color: "#22cf9d", fontWeight: 700 }}>Settled ✅</span>
+                              ) : (
+                                <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

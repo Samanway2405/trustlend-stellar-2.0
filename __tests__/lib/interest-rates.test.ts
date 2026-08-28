@@ -15,6 +15,8 @@ import {
   RATE_SWITCH_COOLDOWN_SECS,
   MIN_FLOATING_RATE_BPS,
   MAX_FLOATING_RATE_BPS,
+  getElapsedDays,
+  calculateEarlyRepayment,
 } from "@/lib/dashboard/interest-rates";
 
 describe("computeUtilization", () => {
@@ -274,3 +276,111 @@ describe("bpsToPercent", () => {
     expect(bpsToPercent(0)).toBe("0.00%");
   });
 });
+
+describe("getElapsedDays", () => {
+  it("returns clamped elapsed days correctly", () => {
+    const start = new Date("2026-08-01T00:00:00Z").getTime();
+    const now = new Date("2026-08-11T00:00:00Z").getTime(); // 10 days later
+    expect(getElapsedDays(start, now, 30)).toBe(10);
+  });
+
+  it("clamps to minimum 1 day for same-day repayment", () => {
+    const start = new Date("2026-08-01T00:00:00Z").getTime();
+    const now = new Date("2026-08-01T02:00:00Z").getTime();
+    expect(getElapsedDays(start, now, 30)).toBe(1);
+  });
+
+  it("clamps to max totalDurationDays if now is past due date", () => {
+    const start = new Date("2026-08-01T00:00:00Z").getTime();
+    const now = new Date("2026-09-15T00:00:00Z").getTime(); // 45 days later
+    expect(getElapsedDays(start, now, 30)).toBe(30);
+  });
+
+  it("handles invalid dates gracefully", () => {
+    expect(getElapsedDays("invalid", "invalid", 30)).toBe(1);
+  });
+});
+
+describe("calculateEarlyRepayment", () => {
+  it("calculates exact adjusted interest and savings for early repayment", () => {
+    // 1000 XLM principal, 1200 bps (12%) APR, 60 days total, repaying on day 15
+    const result = calculateEarlyRepayment({
+      principal: 1000,
+      aprBps: 1200,
+      totalDays: 60,
+      elapsedDays: 15,
+      alreadyPaid: 0,
+      platformFeeBps: 100, // 1%
+    });
+
+    expect(result.isEarly).toBe(true);
+    expect(result.elapsedDays).toBe(15);
+    expect(result.totalDays).toBe(60);
+    expect(result.daysRemaining).toBe(45);
+    expect(result.principal).toBe(1000);
+
+    // Standard interest: 1000 * 0.12 * (60/365) = 19.7260274
+    expect(result.standardInterest).toBeCloseTo(19.7260274, 5);
+
+    // Adjusted interest: 1000 * 0.12 * (15/365) = 4.9315068
+    expect(result.adjustedInterest).toBeCloseTo(4.9315068, 5);
+
+    // Interest saved: 19.7260274 - 4.9315068 = 14.7945206
+    expect(result.interestSaved).toBeCloseTo(14.7945206, 5);
+    expect(result.interestSavedPct).toBeCloseTo(75.0, 1);
+
+    // Platform fee: 1000 * 0.01 = 10
+    expect(result.platformFee).toBe(10);
+
+    // Standard total due: 1000 + 19.7260274 + 10 = 1029.7260274
+    expect(result.standardTotalDue).toBeCloseTo(1029.7260274, 5);
+
+    // Adjusted total due: 1000 + 4.9315068 + 10 = 1014.9315068
+    expect(result.adjustedTotalDue).toBeCloseTo(1014.9315068, 5);
+    expect(result.adjustedRemainingDue).toBeCloseTo(1014.9315068, 5);
+  });
+
+  it("handles repayment at full maturity (not early)", () => {
+    const result = calculateEarlyRepayment({
+      principal: 2000,
+      aprBps: 1000, // 10%
+      totalDays: 30,
+      elapsedDays: 30,
+      alreadyPaid: 500,
+    });
+
+    expect(result.isEarly).toBe(false);
+    expect(result.daysRemaining).toBe(0);
+    expect(result.interestSaved).toBe(0);
+    expect(result.adjustedInterest).toBe(result.standardInterest);
+    expect(result.adjustedTotalDue).toBe(result.standardTotalDue);
+    expect(result.adjustedRemainingDue).toBe(result.standardRemainingDue);
+  });
+
+  it("handles partial repayments already made", () => {
+    const result = calculateEarlyRepayment({
+      principal: 1000,
+      aprBps: 1000,
+      totalDays: 30,
+      elapsedDays: 10,
+      alreadyPaid: 400,
+    });
+
+    expect(result.isEarly).toBe(true);
+    expect(result.adjustedRemainingDue).toBe(+(result.adjustedTotalDue - 400).toFixed(7));
+  });
+
+  it("clamps remaining due to 0 when overpaid", () => {
+    const result = calculateEarlyRepayment({
+      principal: 500,
+      aprBps: 1000,
+      totalDays: 30,
+      elapsedDays: 5,
+      alreadyPaid: 600,
+    });
+
+    expect(result.adjustedRemainingDue).toBe(0);
+    expect(result.standardRemainingDue).toBe(0);
+  });
+});
+

@@ -5,12 +5,14 @@ import { getServerSupabaseClient, getServiceRoleClient } from "@/lib/supabase/se
 import { getLoanLenders } from "@/lib/loans/lenders";
 import { MAX_LENDERS_PER_REPAYMENT } from "@/lib/loans/funding";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { calculateEarlyRepayment, getElapsedDays } from "@/lib/dashboard/interest-rates";
 
 /**
- * GET /api/loans/repay/preflight?loanId=...
+ * GET /api/loans/repay/preflight?loanId=...&daysElapsed=...
  *
- * Returns: lender wallet address + exact repayment breakdown so the client
- * can build and sign the on-chain Stellar payment before calling POST /api/loans/repay.
+ * Returns: lender wallet address + exact repayment breakdown (with early repayment
+ * adjusted interest calculations) so the client can build and sign the on-chain Stellar
+ * payment before calling POST /api/loans/repay.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     const { data: loan } = await supabase
       .from("loans")
-      .select("id, status, principal_amount, repaid_amount, apr_bps, duration_days, borrower_id")
+      .select("id, status, principal_amount, repaid_amount, apr_bps, duration_days, borrower_id, created_at, due_at")
       .eq("id", loanId)
       .eq("borrower_id", user.id)
       .maybeSingle();
@@ -64,17 +66,32 @@ export async function GET(request: NextRequest) {
     const primaryLender = lenders[0];
 
     // --- Interest & fee calculation ---
-    // Interest = principal × (apr_bps/10000) × (duration_days/365)   [pro-rated APR]
     const principal    = Number(loan.principal_amount ?? 0);
     const alreadyPaid  = Number(loan.repaid_amount ?? 0);
     const durationDays = Number(loan.duration_days ?? 30);
     const aprBps       = Number(loan.apr_bps ?? 0);
 
-    const totalInterest   = principal * (aprBps / 10000) * (durationDays / 365);
-    const platformFeePct  = 0.01; // 1% platform fee on principal
-    const platformFee     = +(principal * platformFeePct).toFixed(7);
-    const totalDueGross   = +(principal + totalInterest + platformFee).toFixed(7);
-    const remainingDue    = +Math.max(0, totalDueGross - alreadyPaid).toFixed(7);
+    const daysElapsedParam = request.nextUrl.searchParams.get("daysElapsed");
+    const computedElapsed = loan.created_at
+      ? getElapsedDays(loan.created_at, Date.now(), durationDays)
+      : durationDays;
+    const elapsedDays = daysElapsedParam && !isNaN(Number(daysElapsedParam))
+      ? Math.max(1, Math.min(durationDays, Number(daysElapsedParam)))
+      : computedElapsed;
+
+    const earlyRepayment = calculateEarlyRepayment({
+      principal,
+      aprBps,
+      totalDays: durationDays,
+      elapsedDays,
+      alreadyPaid,
+      platformFeeBps: 100,
+    });
+
+    const totalInterest   = earlyRepayment.standardInterest;
+    const platformFee     = earlyRepayment.platformFee;
+    const totalDueGross   = earlyRepayment.standardTotalDue;
+    const remainingDue    = earlyRepayment.standardRemainingDue;
 
     // Platform wallet (set in env, or use a default treasury address for testnet)
     const platformWallet  = process.env.PLATFORM_FEE_WALLET ?? "";
@@ -105,6 +122,16 @@ export async function GET(request: NextRequest) {
         aprBps,
         durationDays,
         aprPct:          +((aprBps / 10000) * 100).toFixed(4),
+        earlyRepayment: {
+          isEarly: earlyRepayment.isEarly,
+          elapsedDays: earlyRepayment.elapsedDays,
+          daysRemaining: earlyRepayment.daysRemaining,
+          adjustedInterest: earlyRepayment.adjustedInterest,
+          interestSaved: earlyRepayment.interestSaved,
+          interestSavedPct: earlyRepayment.interestSavedPct,
+          adjustedTotalDue: earlyRepayment.adjustedTotalDue,
+          adjustedRemainingDue: earlyRepayment.adjustedRemainingDue,
+        },
       },
     });
   } catch (err) {

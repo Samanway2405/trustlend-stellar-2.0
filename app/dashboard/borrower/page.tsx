@@ -310,6 +310,7 @@ export default async function BorrowerDashboardPage() {
                       { label: "Due" },
                       { label: "Stellar TX" },
                       { label: "Receipt" },
+                      { label: "Action" },
                     ] as Array<{ label: string; term?: GlossaryTermKey }>).map(({ label, term }) => (
                       <th key={label} style={{ textAlign: "left", padding: "0.6rem 0.75rem", fontSize: "0.72rem", fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
                         {term ? (
@@ -330,6 +331,7 @@ export default async function BorrowerDashboardPage() {
                     const loanId = String(loan.id);
                     const txHash = loanTxMap[loanId] ?? "";
                     const hasTx  = isLikelyTxHash(txHash);
+                    const isRepayable = ["active", "funded", "approved"].includes(status);
                     return (
                       <tr key={loanId} style={{ borderBottom: "1px solid #f9fafb" }}>
                         <td style={{ padding: "0.75rem", fontFamily: "monospace", fontSize: "0.8rem", color: "#6b7280" }}>{loanId.slice(0, 8)}</td>
@@ -387,6 +389,32 @@ export default async function BorrowerDashboardPage() {
                             <span style={{ fontSize: "0.75rem", opacity: 0.4 }}>-</span>
                           )}
                         </td>
+                        <td style={{ padding: "0.75rem", whiteSpace: "nowrap" }}>
+                          {isRepayable ? (
+                            <a
+                              href={`/dashboard/borrower/repay?loanId=${loanId}`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.25rem",
+                                padding: "0.35rem 0.75rem",
+                                borderRadius: "0.45rem",
+                                background: "linear-gradient(135deg,#7e2fd0,#5a1fad)",
+                                color: "#fff",
+                                fontSize: "0.78rem",
+                                fontWeight: 700,
+                                textDecoration: "none",
+                                boxShadow: "0 2px 6px rgba(126,47,208,0.25)",
+                              }}
+                            >
+                              ⚡ Repay Early
+                            </a>
+                          ) : status === "repaid" ? (
+                            <span style={{ fontSize: "0.75rem", color: "#22cf9d", fontWeight: 700 }}>Settled ✅</span>
+                          ) : (
+                            <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -404,6 +432,9 @@ export default async function BorrowerDashboardPage() {
               principal_amount: Number(repayableLoan.principal_amount),
               repaid_amount: Number(repayableLoan.repaid_amount ?? 0),
               due_at: repayableLoan.due_at ? String(repayableLoan.due_at) : null,
+              created_at: repayableLoan.created_at ? String(repayableLoan.created_at) : null,
+              apr_bps: Number(repayableLoan.apr_bps ?? 1200),
+              duration_days: Number(repayableLoan.duration_days ?? 30),
             }}
             dueAmount={dueAmount}
           />

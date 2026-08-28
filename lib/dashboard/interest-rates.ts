@@ -241,3 +241,118 @@ export function getRateModelColor(model: InterestRateModel): string {
 export function bpsToPercent(bps: number): string {
   return `${(bps / 100).toFixed(2)}%`;
 }
+
+// ─── Early Loan Repayment Calculation ─────────────────────────────────────────
+
+export interface EarlyRepaymentParams {
+  /** Loan principal amount (in XLM or raw unit) */
+  principal: number;
+  /** Annual interest rate in basis points (e.g. 1000 = 10%) */
+  aprBps: number;
+  /** Original agreed duration in days */
+  totalDays: number;
+  /** Elapsed days since loan start/funding */
+  elapsedDays: number;
+  /** Amount already repaid by the borrower (default: 0) */
+  alreadyPaid?: number;
+  /** Platform fee in basis points (default: 100 bps = 1% on principal) */
+  platformFeeBps?: number;
+}
+
+export interface EarlyRepaymentCalculation {
+  /** Whether this payment occurs earlier than the full term */
+  isEarly: boolean;
+  /** Elapsed days evaluated (clamped between 1 and totalDays) */
+  elapsedDays: number;
+  /** Total scheduled days */
+  totalDays: number;
+  /** Days remaining until due date */
+  daysRemaining: number;
+  /** Principal amount */
+  principal: number;
+  /** Full scheduled interest if held to maturity */
+  standardInterest: number;
+  /** Adjusted interest pro-rated to the elapsed days */
+  adjustedInterest: number;
+  /** Interest amount saved by repaying early */
+  interestSaved: number;
+  /** Percentage of interest saved (0-100) */
+  interestSavedPct: number;
+  /** Platform fee (1% of principal by default) */
+  platformFee: number;
+  /** Full scheduled total due (Principal + Full Interest + Fee) */
+  standardTotalDue: number;
+  /** Adjusted total due for early payoff (Principal + Adjusted Interest + Fee) */
+  adjustedTotalDue: number;
+  /** Standard remaining balance owed after subtracting alreadyPaid */
+  standardRemainingDue: number;
+  /** Adjusted remaining balance owed today for early payoff */
+  adjustedRemainingDue: number;
+}
+
+/**
+ * Calculate elapsed days between start date and current date, clamped to [1, totalDurationDays].
+ */
+export function getElapsedDays(
+  startDate: string | Date | number,
+  currentDate: string | Date | number = Date.now(),
+  totalDurationDays: number = 30,
+): number {
+  const start = new Date(startDate).getTime();
+  const current = new Date(currentDate).getTime();
+  if (isNaN(start) || isNaN(current) || totalDurationDays <= 0) return 1;
+  const diffMs = Math.max(0, current - start);
+  const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return Math.max(1, Math.min(totalDurationDays, days));
+}
+
+/**
+ * Calculates the exact adjusted interest and early payoff amount for a loan.
+ *
+ * Formula:
+ *   Adjusted Interest = Principal × (APR_bps / 10,000) × (Elapsed_Days / 365)
+ *   Interest Saved    = Standard Interest - Adjusted Interest
+ *   Adjusted Total    = Principal + Adjusted Interest + Platform Fee
+ *   Adjusted Owed     = max(0, Adjusted Total - Already Paid)
+ */
+export function calculateEarlyRepayment(params: EarlyRepaymentParams): EarlyRepaymentCalculation {
+  const principal = Math.max(0, Number(params.principal ?? 0));
+  const aprBps = Math.max(0, Number(params.aprBps ?? 0));
+  const totalDays = Math.max(1, Number(params.totalDays ?? 30));
+  const elapsedDays = Math.max(1, Math.min(totalDays, Number(params.elapsedDays ?? totalDays)));
+  const alreadyPaid = Math.max(0, Number(params.alreadyPaid ?? 0));
+  const platformFeeBps = params.platformFeeBps ?? 100; // 1%
+
+  const standardInterest = +(principal * (aprBps / 10000) * (totalDays / 365)).toFixed(7);
+  const adjustedInterest = +(principal * (aprBps / 10000) * (elapsedDays / 365)).toFixed(7);
+  const interestSaved = +Math.max(0, standardInterest - adjustedInterest).toFixed(7);
+  const interestSavedPct = standardInterest > 0 ? +((interestSaved / standardInterest) * 100).toFixed(2) : 0;
+
+  const platformFee = +(principal * (platformFeeBps / 10000)).toFixed(7);
+  const standardTotalDue = +(principal + standardInterest + platformFee).toFixed(7);
+  const adjustedTotalDue = +(principal + adjustedInterest + platformFee).toFixed(7);
+
+  const standardRemainingDue = +Math.max(0, standardTotalDue - alreadyPaid).toFixed(7);
+  const adjustedRemainingDue = +Math.max(0, adjustedTotalDue - alreadyPaid).toFixed(7);
+
+  const isEarly = elapsedDays < totalDays;
+  const daysRemaining = totalDays - elapsedDays;
+
+  return {
+    isEarly,
+    elapsedDays,
+    totalDays,
+    daysRemaining,
+    principal,
+    standardInterest,
+    adjustedInterest,
+    interestSaved,
+    interestSavedPct,
+    platformFee,
+    standardTotalDue,
+    adjustedTotalDue,
+    standardRemainingDue,
+    adjustedRemainingDue,
+  };
+}
+
