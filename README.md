@@ -93,7 +93,7 @@ flowchart TB
     subgraph Client["🖥️ Client Layer"]
         direction TB
         WA[("🌐 Web App<br/>Next.js 16 + React 19")]
-        BW[("👛 Browser Wallet<br/>Freighter / xBull / Albedo")]
+        BW[("👛 Stellar Wallet<br/>Freighter / xBull / Albedo<br/>WalletConnect (mobile)")]
         RD[("📱 Role Dashboards<br/>Borrower · Lender · Admin")]
     end
 
@@ -246,7 +246,7 @@ flowchart LR
     style S fill:#3b82f6,color:#fff
 ```
 
-1. **Onboarding:** User signs up via Supabase Auth, connects a Stellar wallet (Freighter / xBull / Albedo), completes KYC verification, and their on-chain reputation profile is initialized.
+1. **Onboarding:** User signs up via Supabase Auth, connects a Stellar wallet (Freighter / xBull / Albedo on desktop, or any WalletConnect v2 mobile wallet such as LOBSTR by scanning a QR code), completes KYC verification, and their on-chain reputation profile is initialized.
 2. **Borrowing:** Borrower submits a loan request. The Next.js backend calls `ReputationContract.calculate_max_loan` and `calculate_interest_rate` to determine eligibility and terms.
 3. **Lending:** Lender reviews the request in the marketplace, approves it, and the `LendingContract.approve_loan` is called. Funds are locked via `EscrowContract.create_escrow_hold`.
 4. **Disbursement:** After the 1-hour revocation window expires, the admin confirms disbursement. `EscrowContract.confirm_disbursement` releases funds to the borrower, and `LendingContract.activate_loan` marks the loan as active.
@@ -271,7 +271,7 @@ flowchart LR
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Framer Motion |
 | **Backend & DB** | Supabase (Auth, Postgres RLS, Storage) |
 | **Blockchain** | Stellar Testnet, Soroban RPC, Horizon API |
-| **Wallet** | Freighter Wallet, xBull, Albedo (`@stellar/freighter-api`, `@creit.tech/stellar-wallets-kit`) |
+| **Wallet** | Freighter Wallet, xBull, Albedo, WalletConnect v2 for mobile wallets (`@stellar/freighter-api`, `@creit.tech/stellar-wallets-kit`) |
 | **Smart Contracts** | Rust (Soroban, `wasm32v1-none`)  — 8 contracts deployed |
 | **Indexer** | SubQuery (`@subql/node-stellar`, `@subql/query`) — GraphQL + REST |
 | **Cache** | Upstash Redis |
