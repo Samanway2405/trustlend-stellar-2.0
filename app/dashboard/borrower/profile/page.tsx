@@ -1,6 +1,7 @@
 import { WorkspaceFrame } from "@/components/dashboard/WorkspaceFrame";
 import { ProfileSettingsForm } from "@/components/dashboard/ProfileSettingsForm";
 import { KycVerificationWidget } from "@/components/dashboard/KycVerificationWidget";
+import { BorrowerReputationCard } from "@/components/dashboard/BorrowerReputationCard";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import {
   getBorrowerDashboardMetrics,
@@ -8,6 +9,7 @@ import {
 } from "@/lib/dashboard/metrics";
 import { borrowerNavLinks } from "@/lib/dashboard/borrower-links";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import { computeBorrowerReputationScore, BorrowerRepaymentStats } from "@/lib/reputation/scoring";
 
 
 // Compliance status config
@@ -60,13 +62,85 @@ export default async function BorrowerProfilePage() {
   const metrics = await getBorrowerDashboardMetrics(user.id);
 
   const supabase = await getServerSupabaseClient();
-  const { data: profile } = supabase
-    ? await supabase
-        .from("profiles")
-        .select("full_name, phone, date_of_birth, role, country_code, kyc_status, risk_status, government_id_url, kyc_submitted_at, kyc_provider_id")
-        .eq("id", user.id)
-        .maybeSingle()
-    : { data: null as Record<string, unknown> | null };
+  const [profileRes, loansRes, repaymentsRes, snapshotRes] = supabase
+    ? await Promise.all([
+        supabase
+          .from("profiles")
+          .select("full_name, phone, date_of_birth, role, country_code, kyc_status, risk_status, government_id_url, kyc_submitted_at, kyc_provider_id, created_at")
+          .eq("id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("loans")
+          .select("id, status, principal_amount, repaid_amount, due_at, created_at, metadata")
+          .eq("borrower_id", user.id),
+        supabase
+          .from("loan_repayments")
+          .select("id, amount, paid_at, loan_id")
+          .eq("payer_id", user.id),
+        supabase
+          .from("reputation_snapshots")
+          .select("score_total, updated_at")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ])
+    : [{ data: null }, { data: [] }, { data: [] }, { data: null }];
+
+  const profile = profileRes.data;
+  const userLoans = loansRes.data ?? [];
+  const userRepayments = repaymentsRes.data ?? [];
+
+  // Compute on-chain repayment history stats
+  const completedLoans = userLoans.filter((l) => l.status === "repaid").length;
+  const defaultedLoans = userLoans.filter((l) => l.status === "defaulted").length;
+
+  let onTimeCount = 0;
+  let earlyCount = 0;
+  let lateCount = 0;
+
+  for (const loan of userLoans) {
+    if (loan.status === "repaid") {
+      const dueTime = loan.due_at ? new Date(loan.due_at).getTime() : 0;
+      const creationTime = loan.created_at ? new Date(loan.created_at).getTime() : 0;
+      if (loan.metadata && typeof loan.metadata === "object" && (loan.metadata as Record<string, unknown>).is_early) {
+        earlyCount++;
+      } else if (dueTime > 0) {
+        const loanPayments = userRepayments.filter((r) => r.loan_id === loan.id);
+        const latestPayment = loanPayments.reduce(
+          (latest, r) => Math.max(latest, new Date(r.paid_at).getTime()),
+          creationTime
+        );
+        if (latestPayment <= dueTime) {
+          onTimeCount++;
+        } else {
+          lateCount++;
+        }
+      } else {
+        onTimeCount++;
+      }
+    }
+  }
+
+  const totalBorrowed = userLoans.reduce((sum, l) => sum + Number(l.principal_amount ?? 0), 0);
+  const totalRepaid = userRepayments.reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+  const accountAgeDays = profile?.created_at
+    ? Math.floor((Date.now() - new Date(String(profile.created_at)).getTime()) / (86400 * 1000))
+    : 0;
+
+  const stats: BorrowerRepaymentStats = {
+    totalLoans: userLoans.length,
+    completedLoans,
+    onTimeRepayments: onTimeCount,
+    earlyRepayments: earlyCount,
+    lateRepayments: lateCount,
+    defaultedLoans,
+    totalBorrowedXlm: totalBorrowed,
+    totalRepaidXlm: totalRepaid,
+    kycVerified: profile?.kyc_status === "verified",
+    emailVerified: Boolean(user.email_confirmed_at),
+    accountAgeDays,
+  };
+
+  const reputationResult = computeBorrowerReputationScore(stats);
 
   // Compute real profile completion based on actual data
   const checks = [
@@ -110,7 +184,14 @@ export default async function BorrowerProfilePage() {
       }}
       links={borrowerNavLinks}
     >
-      <div className="workspace-grid workspace-grid--two">
+      <div className="workspace-stack" style={{ gap: "1.5rem" }}>
+        {/* ── TOP: Borrower Reputation & Credit Score Card ── */}
+        <BorrowerReputationCard
+          reputation={reputationResult}
+          updatedAt={snapshotRes?.data?.updated_at}
+        />
+
+        <div className="workspace-grid workspace-grid--two">
         {/* ── LEFT: Identity Verification Form ── */}
         <article className="workspace-card">
           <div style={{ marginBottom: "1.25rem" }}>

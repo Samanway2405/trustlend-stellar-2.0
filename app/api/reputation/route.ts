@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceRoleClient } from "@/lib/supabase/server";
 import { enforceRouteRateLimit } from "@/lib/rate-limit";
-
-// Helper function to get credit tier based on score
-function getReputationTier(score: number): string {
-  if (score >= 750) return "Platinum";
-  if (score >= 500) return "Gold";
-  if (score >= 300) return "Silver";
-  return "Bronze";
-}
+import {
+  scoreToTier,
+  TIER_INTEREST_BPS,
+  TIER_MAX_LOAN,
+} from "@/types/contracts";
+import { STANDARD_BASE_APR_BPS } from "@/lib/reputation/scoring";
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +28,7 @@ export async function GET(request: NextRequest) {
     // 1. Fetch user profile by wallet_address to get user_id
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, full_name, wallet_address")
+      .select("id, full_name, wallet_address, kyc_status")
       .eq("wallet_address", address)
       .maybeSingle();
 
@@ -45,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 2. Fetch reputation snapshot
     const { data: reputation, error: reputationError } = await supabase
       .from("reputation_snapshots")
-      .select("score_total, updated_at")
+      .select("score_total, tier, score_breakdown, updated_at")
       .eq("user_id", profile.id)
       .maybeSingle();
 
@@ -53,32 +51,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: reputationError.message }, { status: 500 });
     }
 
-    const score = reputation?.score_total ?? 250; // default initial score is 250
-    const tier = getReputationTier(score);
-    const limit = score * 10; // credit limit is score * 10
-
-    // TODO (SubQuery Indexer Migration):
-    // Migrate this data fetch to read from the SubQuery Indexer:
-    // 1. Fetch reputation history events by querying the SubQuery GraphQL endpoint:
-    //    query {
-    //      reputationEvents(filter: { borrowerAddress: { equalTo: "${address}" } }, orderBy: TIMESTAMP_DESC) {
-    //        nodes {
-    //          id
-    //          eventType
-    //          pointsDelta
-    //          scoreAfter
-    //          timestamp
-    //        }
-    //      }
-    //    }
-    // 2. Map the results back to the expected output payload:
-    //    history: subqueryData.reputationEvents.nodes.map(e => ({
-    //      id: e.id,
-    //      event_type: e.eventType,
-    //      points: e.pointsDelta,
-    //      description: `Points change: ${e.pointsDelta} (New Score: ${e.scoreAfter})`,
-    //      created_at: e.timestamp
-    //    }))
+    const score = Number(reputation?.score_total ?? 250);
+    const tier = scoreToTier(BigInt(score));
+    const interestRateBps = TIER_INTEREST_BPS[tier] ?? STANDARD_BASE_APR_BPS;
+    const rateDiscountBps = Math.max(0, STANDARD_BASE_APR_BPS - interestRateBps);
+    const maxLoanStroops = TIER_MAX_LOAN[tier] ?? TIER_MAX_LOAN.None;
+    const maxLoanXlm = Number(maxLoanStroops / 10_000_000n);
 
     // 3. Fetch reputation history events
     const { data: history, error: historyError } = await supabase
@@ -92,19 +70,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: historyError.message }, { status: 500 });
     }
 
-    return NextResponse.json({
-      success: true,
-      address: profile.wallet_address,
-      borrower_name: profile.full_name,
-      reputation: {
-        score,
-        tier,
-        limit_xlm: limit,
-        updated_at: reputation?.updated_at || null
+    return NextResponse.json(
+      {
+        success: true,
+        address: profile.wallet_address,
+        borrower_name: profile.full_name,
+        reputation: {
+          score,
+          tier: String(tier),
+          interest_rate_pct: interestRateBps / 100,
+          rate_discount_pct: rateDiscountBps / 100,
+          limit_xlm: maxLoanXlm,
+          breakdown: reputation?.score_breakdown || null,
+          calculated_daily: true,
+          updated_at: reputation?.updated_at || null,
+        },
+        history: history || [],
       },
-      history: history || []
-    }, { status: 200 });
-
+      { status: 200 }
+    );
   } catch (_error) {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
