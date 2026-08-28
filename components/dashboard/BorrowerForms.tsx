@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { formatTokenBalance } from "@/lib/utils/formatting";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { TermTooltip } from "@/components/ui/TermTooltip";
 import { FundingProgressBar } from "@/components/ui/FundingProgressBar";
 import { WalletSelectionModal } from "@/components/ui/WalletSelectionModal";
 import {

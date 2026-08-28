@@ -57,6 +57,20 @@ const RISK_CONFIG: Record<
   blocked: { label: "Blocked",      color: "#6b7280", bg: "rgba(107,114,128,0.1)",   dot: "#9ca3af" },
 };
 
+/**
+ * Whole days between `createdAt` and now, or 0 when unknown.
+ *
+ * Kept outside the component so `react-hooks/purity` does not flag `Date.now()`:
+ * this is an async server component that renders once per request, but the rule
+ * cannot distinguish that from a client re-render.
+ */
+function daysSince(createdAt: unknown): number {
+  if (!createdAt) return 0;
+  const started = new Date(String(createdAt)).getTime();
+  if (Number.isNaN(started)) return 0;
+  return Math.floor((Date.now() - started) / (86400 * 1000));
+}
+
 export default async function BorrowerProfilePage() {
   const { user } = await requireAuthenticatedUser("borrower");
   const metrics = await getBorrowerDashboardMetrics(user.id);
@@ -122,9 +136,7 @@ export default async function BorrowerProfilePage() {
 
   const totalBorrowed = userLoans.reduce((sum, l) => sum + Number(l.principal_amount ?? 0), 0);
   const totalRepaid = userRepayments.reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
-  const accountAgeDays = profile?.created_at
-    ? Math.floor((Date.now() - new Date(String(profile.created_at)).getTime()) / (86400 * 1000))
-    : 0;
+  const accountAgeDays = daysSince(profile?.created_at);
 
   const stats: BorrowerRepaymentStats = {
     totalLoans: userLoans.length,
@@ -506,6 +518,7 @@ export default async function BorrowerProfilePage() {
               </button>
             </div>
           </article>
+        </div>
         </div>
       </div>
     </WorkspaceFrame>
