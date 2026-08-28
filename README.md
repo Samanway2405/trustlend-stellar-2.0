@@ -556,6 +556,15 @@ If you discover a security vulnerability within TrustLend, please refer to our [
 
 ---
 
+## 💾 Backups & Disaster Recovery
+
+The PostgreSQL database is dumped, encrypted with AES-256 and uploaded to Amazon S3
+every night at 00:00 UTC by the [Automated DB Backup](.github/workflows/db-backup.yml)
+workflow. Restore steps, bucket/IAM setup and the quarterly restore drill are
+documented in [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md).
+
+---
+
 ## 📜 License
 
 This project is licensed under the [MIT License](LICENSE).
