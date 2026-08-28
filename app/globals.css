@@ -1010,6 +1010,16 @@ a {
   font-weight: 700;
 }
 
+.dark .workspace-card {
+  border: 1px solid rgba(160, 167, 197, 0.2);
+  background: #14182e;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+.dark .workspace-card-title {
+  color: #e6e8f0;
+}
+
 .workspace-card-copy {
   margin: 0.45rem 0 0;
   color: #627091;
@@ -1017,11 +1027,20 @@ a {
   line-height: 1.5;
 }
 
+.dark .workspace-card-copy {
+  color: #a0a7c5;
+}
+
 .workspace-table-wrap {
   border-radius: 0.95rem;
   border: 1px solid rgba(122, 138, 177, 0.25);
   background: #ffffff;
   overflow-x: auto;
+}
+
+.dark .workspace-table-wrap {
+  border: 1px solid rgba(160, 167, 197, 0.2);
+  background: #14182e;
 }
 
 .workspace-table {
@@ -1039,6 +1058,17 @@ a {
   color: #344062;
 }
 
+.dark .workspace-table th {
+  color: #a0a7c5;
+  background: #0e1224;
+  border-bottom: 1px solid rgba(160, 167, 197, 0.15);
+}
+
+.dark .workspace-table td {
+  color: #e6e8f0;
+  border-bottom: 1px solid rgba(160, 167, 197, 0.1);
+}
+
 .workspace-table th {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
@@ -1050,6 +1080,10 @@ a {
 .workspace-empty-row {
   text-align: center !important;
   color: #7a86a8 !important;
+}
+
+.dark .workspace-empty-row {
+  color: #a0a7c5 !important;
 }
 
 .workspace-list {
@@ -1092,6 +1126,12 @@ a {
   font-size: 0.82rem;
 }
 
+.dark .workspace-input {
+  border: 1px solid rgba(160, 167, 197, 0.3);
+  background: #0e1224;
+  color: #e6e8f0;
+}
+
 .workspace-mini-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1108,6 +1148,12 @@ a {
   font-size: 0.78rem;
 }
 
+.dark .workspace-mini-metrics p {
+  border: 1px solid rgba(160, 167, 197, 0.2);
+  background: #14182e;
+  color: #e6e8f0;
+}
+
 .workspace-mini-stat {
   display: flex;
   flex-direction: column;
@@ -1119,6 +1165,11 @@ a {
   text-align: center;
 }
 
+.dark .workspace-mini-stat {
+  border: 1px solid rgba(160, 167, 197, 0.2);
+  background: linear-gradient(135deg, #181d38 0%, #10242a 100%);
+}
+
 .workspace-mini-stat-label {
   font-size: 0.75rem;
   font-weight: 600;
@@ -1127,11 +1178,19 @@ a {
   color: #68759a;
 }
 
+.dark .workspace-mini-stat-label {
+  color: #a0a7c5;
+}
+
 .workspace-mini-stat-value {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 700;
   color: #28325a;
+}
+
+.dark .workspace-mini-stat-value {
+  color: #e6e8f0;
 }
 
 .workspace-muted {

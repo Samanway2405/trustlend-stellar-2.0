@@ -183,11 +183,17 @@ export function WorkspaceFrame({
                 </div>
               </div>
               <div className="workspace-header-widget" aria-label="Dashboard controls">
-                {headerWidget ?? (
+                {headerWidget ? (
                   <div className="workspace-top-actions">
-                       <span className="workspace-chip">{displayName}</span>
-                       <ThemeToggle />
-                      <NotificationWidget />
+                    {headerWidget}
+                    <ThemeToggle />
+                    <NotificationWidget />
+                  </div>
+                ) : (
+                  <div className="workspace-top-actions">
+                    <span className="workspace-chip">{displayName}</span>
+                    <ThemeToggle />
+                    <NotificationWidget />
                   </div>
                 )}
               </div>
