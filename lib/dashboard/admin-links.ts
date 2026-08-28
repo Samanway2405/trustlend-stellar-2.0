@@ -5,5 +5,6 @@ export const adminNavLinks = [
   { href: "/dashboard/admin/pools",    label: "Pool Management" },
   { href: "/dashboard/admin/kyc",      label: "KYC Review" },
   { href: "/dashboard/admin/activity", label: "Treasury & Activity" },
+  { href: "/dashboard/admin/risk",     label: "Risk Parameters" },
   { href: "/dashboard/admin/security", label: "Security & Flags" },
 ] as const;
