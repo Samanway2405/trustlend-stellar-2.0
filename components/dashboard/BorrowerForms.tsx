@@ -202,10 +202,11 @@ export function LoanApplicationForm({ maxAmount, onSubmit }: LoanApplicationForm
 interface RepaymentFormProps {
   loanAmount: number;
   repaidAmount: number;
+  loan?: BorrowerLoan | null;
   onSubmit: (amount: number) => Promise<void>;
 }
 
-export function RepaymentForm({ loanAmount, repaidAmount, onSubmit }: RepaymentFormProps) {
+export function RepaymentForm({ loanAmount, repaidAmount, loan, onSubmit }: RepaymentFormProps) {
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -254,6 +255,28 @@ export function RepaymentForm({ loanAmount, repaidAmount, onSubmit }: RepaymentF
           <strong>{dueAmount.toFixed(2)} XLM</strong>
         </p>
       </div>
+
+      {loan?.id && (
+        <div style={{ background: "rgba(126,47,208,0.06)", border: "1px solid rgba(126,47,208,0.2)", borderRadius: "0.5rem", padding: "0.75rem 0.9rem", marginBottom: "0.75rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "0.8rem", color: "#4b5563" }}>
+              ⚡ <strong>Early Repayment:</strong> Pay before due date with adjusted pro-rated interest.
+            </span>
+            <a
+              href={`/dashboard/borrower/repay?loanId=${loan.id}`}
+              style={{
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                color: "#7e2fd0",
+                textDecoration: "underline",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Open Early Payoff Interface →
+            </a>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="workspace-label">Custom Payment Amount</label>
@@ -504,6 +527,7 @@ export function BorrowerForms({
             <RepaymentForm
               loanAmount={Number(selectedRepaymentLoan.principal_amount ?? 0)}
               repaidAmount={Number(selectedRepaymentLoan.repaid_amount ?? 0)}
+              loan={selectedRepaymentLoan}
               onSubmit={handleRepayment}
             />
           </>

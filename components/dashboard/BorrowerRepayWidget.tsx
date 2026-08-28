@@ -12,12 +12,20 @@ import {
   splitRepaymentAcrossLenders,
   type LenderContribution,
 } from "@/lib/loans/funding";
+import {
+  calculateEarlyRepayment,
+  getElapsedDays,
+  type EarlyRepaymentCalculation,
+} from "@/lib/dashboard/interest-rates";
 
 interface RepayLoan {
   id: string;
   principal_amount: number;
   repaid_amount: number;
   due_at: string | null;
+  created_at?: string | null;
+  apr_bps?: number;
+  duration_days?: number;
 }
 
 interface RepaymentRecord {
@@ -42,6 +50,17 @@ type Step =
   | "submitting"
   | "recording";
 
+interface EarlyRepaymentBreakdown {
+  isEarly: boolean;
+  elapsedDays: number;
+  daysRemaining: number;
+  adjustedInterest: number;
+  interestSaved: number;
+  interestSavedPct: number;
+  adjustedTotalDue: number;
+  adjustedRemainingDue: number;
+}
+
 interface RepaymentBreakdown {
   principal: number;
   interest: number;
@@ -53,6 +72,7 @@ interface RepaymentBreakdown {
   aprBps: number;
   durationDays: number;
   aprPct: number;
+  earlyRepayment?: EarlyRepaymentBreakdown;
 }
 
 function SuccessOverlay({
@@ -200,6 +220,8 @@ export function BorrowerRepayWidget({
     null,
   );
   const [activeWalletLabel, setActiveWalletLabel] = useState("wallet");
+  const [earlyPayoffEnabled, setEarlyPayoffEnabled] = useState(true);
+  const [customElapsedDays, setCustomElapsedDays] = useState<number | null>(null);
 
   const fetchRepayments = useCallback(async () => {
     try {
@@ -230,6 +252,28 @@ export function BorrowerRepayWidget({
     fetchRepayments();
     fetchPreflight();
   }, [fetchRepayments, fetchPreflight]);
+
+  const totalDuration = breakdownData?.durationDays ?? loan.duration_days ?? 30;
+  const initialElapsed = breakdownData?.earlyRepayment?.elapsedDays ?? (
+    loan.created_at
+      ? getElapsedDays(loan.created_at, Date.now(), totalDuration)
+      : (loan.due_at ? Math.max(1, Math.min(totalDuration, totalDuration - Math.max(0, Math.ceil((new Date(loan.due_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))))) : 1)
+  );
+  const activeElapsedDays = customElapsedDays ?? initialElapsed;
+
+  // Real-time calculation of early adjusted repayment
+  const earlyCalc: EarlyRepaymentCalculation = calculateEarlyRepayment({
+    principal: breakdownData?.principal ?? loan.principal_amount,
+    aprBps: breakdownData?.aprBps ?? loan.apr_bps ?? 1200,
+    totalDays: totalDuration,
+    elapsedDays: activeElapsedDays,
+    alreadyPaid: breakdownData?.alreadyPaid ?? loan.repaid_amount,
+    platformFeeBps: 100,
+  });
+
+  const effectiveDueAmount = earlyPayoffEnabled && earlyCalc.isEarly
+    ? earlyCalc.adjustedRemainingDue
+    : dueAmount;
 
   const handleRepayOnChain = async (amount: number) => {
     setError("");
@@ -424,9 +468,28 @@ export function BorrowerRepayWidget({
           }}
         >
           <div>
-            <h2 className="workspace-card-title" style={{ margin: 0 }}>
-              On-Chain Repayment
-            </h2>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+              <h2 className="workspace-card-title" style={{ margin: 0 }}>
+                On-Chain Repayment
+              </h2>
+              {earlyCalc.isEarly && dueAmount > 0 && (
+                <span
+                  style={{
+                    fontSize: "0.72rem",
+                    fontWeight: 800,
+                    color: "#7e2fd0",
+                    background: "rgba(126,47,208,0.1)",
+                    padding: "0.2rem 0.55rem",
+                    borderRadius: "9999px",
+                    border: "1px solid rgba(126,47,208,0.25)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  ⚡ Early Payoff
+                </span>
+              )}
+            </div>
             <p
               style={{
                 margin: "0.25rem 0 0",
@@ -436,6 +499,7 @@ export function BorrowerRepayWidget({
             >
               Loan #{loan.id.slice(0, 8)} &bull; Due{" "}
               {loan.due_at ? new Date(loan.due_at).toLocaleDateString() : "N/A"}
+              {earlyCalc.isEarly && dueAmount > 0 && ` (${earlyCalc.daysRemaining} days remaining)`}
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -444,21 +508,21 @@ export function BorrowerRepayWidget({
                 fontSize: "0.82rem",
                 fontWeight: 700,
                 display: "inline-block",
-                color: dueAmount > 0 ? "#f5a623" : "#22cf9d",
+                color: effectiveDueAmount > 0 ? (earlyPayoffEnabled && earlyCalc.isEarly ? "#22cf9d" : "#f5a623") : "#22cf9d",
                 background:
-                  dueAmount > 0
-                    ? "rgba(245,166,35,0.08)"
+                  effectiveDueAmount > 0
+                    ? (earlyPayoffEnabled && earlyCalc.isEarly ? "rgba(34,207,157,0.08)" : "rgba(245,166,35,0.08)")
                     : "rgba(34,207,157,0.08)",
                 padding: "0.3rem 0.75rem",
                 borderRadius: "9999px",
-                border: `1px solid ${dueAmount > 0 ? "rgba(245,166,35,0.25)" : "rgba(34,207,157,0.25)"}`,
+                border: `1px solid ${effectiveDueAmount > 0 ? (earlyPayoffEnabled && earlyCalc.isEarly ? "rgba(34,207,157,0.25)" : "rgba(245,166,35,0.25)") : "rgba(34,207,157,0.25)"}`,
               }}
             >
-              {dueAmount > 0
-                ? `${formatCurrency(dueAmount)} remaining`
+              {effectiveDueAmount > 0
+                ? `${formatCurrency(effectiveDueAmount)} ${earlyPayoffEnabled && earlyCalc.isEarly ? "early payoff" : "remaining"}`
                 : "Fully Paid ✅"}
             </span>
-            {breakdownData && dueAmount > 0 && (
+            {dueAmount > 0 && (
               <button
                 onClick={() => setShowFeeBreakdown(!showFeeBreakdown)}
                 style={{
@@ -474,14 +538,154 @@ export function BorrowerRepayWidget({
                   textDecoration: "underline",
                 }}
               >
-                View Breakdown
+                {showFeeBreakdown ? "Hide Breakdown" : "View Breakdown"}
               </button>
             )}
           </div>
         </div>
 
+        {/* ── Early Loan Repayment Banner & Controls ── */}
+        {earlyCalc.isEarly && dueAmount > 0 && (
+          <div
+            className="borrower-early-repay-banner"
+            style={{
+              background: "linear-gradient(135deg, rgba(126,47,208,0.06), rgba(34,207,157,0.06))",
+              border: "1px solid rgba(126,47,208,0.2)",
+              borderRadius: "0.75rem",
+              padding: "1rem 1.15rem",
+              marginBottom: "1.25rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span style={{ fontSize: "1.1rem" }}>⚡</span>
+                  <strong style={{ fontSize: "0.92rem", color: "#111827" }}>
+                    Early Repayment Interest Adjustment
+                  </strong>
+                </div>
+                <p style={{ margin: "0.3rem 0 0", fontSize: "0.82rem", color: "#4b5563", lineHeight: 1.4 }}>
+                  Repaying early calculates interest only for the <strong>{activeElapsedDays} active day{activeElapsedDays > 1 ? "s" : ""}</strong> instead of the full {earlyCalc.totalDays}-day term.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setEarlyPayoffEnabled(!earlyPayoffEnabled)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "0.45rem",
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    border: earlyPayoffEnabled ? "1px solid #22cf9d" : "1px solid #d1d5db",
+                    background: earlyPayoffEnabled ? "rgba(34,207,157,0.12)" : "#fff",
+                    color: earlyPayoffEnabled ? "#15803d" : "#6b7280",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {earlyPayoffEnabled ? "✓ Adjusted Interest Active" : "Use Standard Term"}
+                </button>
+              </div>
+            </div>
+
+            {/* Savings stats strip */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: "0.75rem",
+                marginTop: "0.9rem",
+                paddingTop: "0.85rem",
+                borderTop: "1px solid rgba(126,47,208,0.12)",
+              }}
+            >
+              <div>
+                <span style={{ fontSize: "0.72rem", color: "#6b7280", textTransform: "uppercase", fontWeight: 600 }}>
+                  Adjusted Interest
+                </span>
+                <p style={{ margin: "0.15rem 0 0", fontWeight: 800, fontSize: "0.95rem", color: "#7e2fd0" }}>
+                  {formatCurrency(earlyCalc.adjustedInterest)}
+                </p>
+                <span style={{ fontSize: "0.7rem", color: "#9ca3af" }}>
+                  vs {formatCurrency(earlyCalc.standardInterest)} full term
+                </span>
+              </div>
+
+              <div>
+                <span style={{ fontSize: "0.72rem", color: "#6b7280", textTransform: "uppercase", fontWeight: 600 }}>
+                  Interest Saved
+                </span>
+                <p style={{ margin: "0.15rem 0 0", fontWeight: 800, fontSize: "0.95rem", color: "#22cf9d" }}>
+                  +{formatCurrency(earlyCalc.interestSaved)} ({earlyCalc.interestSavedPct}%)
+                </p>
+                <span style={{ fontSize: "0.7rem", color: "#16a34a" }}>
+                  Instant early discount
+                </span>
+              </div>
+
+              <div>
+                <span style={{ fontSize: "0.72rem", color: "#6b7280", textTransform: "uppercase", fontWeight: 600 }}>
+                  Early Payoff Amount
+                </span>
+                <p style={{ margin: "0.15rem 0 0", fontWeight: 800, fontSize: "0.95rem", color: "#111827" }}>
+                  {formatCurrency(earlyCalc.adjustedRemainingDue)}
+                </p>
+                <span style={{ fontSize: "0.7rem", color: "#9ca3af", textDecoration: "line-through" }}>
+                  {formatCurrency(earlyCalc.standardRemainingDue)} full
+                </span>
+              </div>
+            </div>
+
+            {/* Interactive Day Slider / Simulation */}
+            <div style={{ marginTop: "0.9rem", paddingTop: "0.75rem", borderTop: "1px dashed rgba(126,47,208,0.15)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#4b5563" }}>
+                  Simulate Early Repayment Day: <span style={{ color: "#7e2fd0" }}>Day {activeElapsedDays} of {earlyCalc.totalDays}</span>
+                </label>
+                {customElapsedDays !== null && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomElapsedDays(null)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#7e2fd0",
+                      fontSize: "0.72rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      padding: 0,
+                    }}
+                  >
+                    Reset to Today (Day {initialElapsed})
+                  </button>
+                )}
+              </div>
+              <input
+                type="range"
+                min="1"
+                max={earlyCalc.totalDays}
+                value={activeElapsedDays}
+                onChange={(e) => setCustomElapsedDays(Number(e.target.value))}
+                style={{
+                  width: "100%",
+                  accentColor: "#7e2fd0",
+                  cursor: "pointer",
+                }}
+              />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "#9ca3af", marginTop: "0.2rem" }}>
+                <span>Day 1 (Max Discount)</span>
+                <span>Day {Math.ceil(earlyCalc.totalDays / 2)} (Mid-term)</span>
+                <span>Day {earlyCalc.totalDays} (Maturity)</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Fee Breakdown Panel */}
-        {showFeeBreakdown && breakdownData && (
+        {showFeeBreakdown && (
           <div
             style={{
               background: "#f9fafb",
@@ -500,9 +704,9 @@ export function BorrowerRepayWidget({
                 marginBottom: "0.4rem",
               }}
             >
-              <span>Principal ({breakdownData.durationDays} days):</span>
+              <span>Principal:</span>
               <span style={{ fontWeight: 600 }}>
-                {formatCurrency(breakdownData.principal)}
+                {formatCurrency(earlyCalc.principal)}
               </span>
             </div>
             <div
@@ -512,11 +716,30 @@ export function BorrowerRepayWidget({
                 marginBottom: "0.4rem",
               }}
             >
-              <span>Interest ({breakdownData.aprPct}% APR):</span>
+              <span>
+                {earlyPayoffEnabled && earlyCalc.isEarly
+                  ? `Adjusted Interest (${activeElapsedDays} days @ ${((breakdownData?.aprBps ?? 1200) / 100).toFixed(2)}% APR):`
+                  : `Full Term Interest (${earlyCalc.totalDays} days @ ${((breakdownData?.aprBps ?? 1200) / 100).toFixed(2)}% APR):`}
+              </span>
               <span style={{ fontWeight: 600, color: "#f5a623" }}>
-                +{formatCurrency(breakdownData.interest)}
+                +{formatCurrency(earlyPayoffEnabled && earlyCalc.isEarly ? earlyCalc.adjustedInterest : earlyCalc.standardInterest)}
               </span>
             </div>
+            {earlyPayoffEnabled && earlyCalc.isEarly && earlyCalc.interestSaved > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "0.4rem",
+                  color: "#16a34a",
+                }}
+              >
+                <span>Early Repayment Savings:</span>
+                <span style={{ fontWeight: 700 }}>
+                  -{formatCurrency(earlyCalc.interestSaved)} ({earlyCalc.interestSavedPct}%)
+                </span>
+              </div>
+            )}
             <div
               style={{
                 display: "flex",
@@ -526,7 +749,7 @@ export function BorrowerRepayWidget({
             >
               <span>Platform Fee (1%):</span>
               <span style={{ fontWeight: 600, color: "#ef4444" }}>
-                +{formatCurrency(breakdownData.platformFee)}
+                +{formatCurrency(earlyCalc.platformFee)}
               </span>
             </div>
             <div
@@ -541,7 +764,7 @@ export function BorrowerRepayWidget({
               }}
             >
               <span>Total Required:</span>
-              <span>{formatCurrency(breakdownData.totalDue)}</span>
+              <span>{formatCurrency(earlyPayoffEnabled && earlyCalc.isEarly ? earlyCalc.adjustedTotalDue : earlyCalc.standardTotalDue)}</span>
             </div>
             <div
               style={{
@@ -551,7 +774,21 @@ export function BorrowerRepayWidget({
               }}
             >
               <span>Already Paid:</span>
-              <span>-{formatCurrency(breakdownData.alreadyPaid)}</span>
+              <span>-{formatCurrency(loan.repaid_amount)}</span>
+            </div>
+            <div
+              style={{
+                borderTop: "1px dashed #e5e7eb",
+                marginTop: "0.4rem",
+                paddingTop: "0.4rem",
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 800,
+                color: "#7e2fd0",
+              }}
+            >
+              <span>Exact Net Amount Owed Today:</span>
+              <span>{formatCurrency(effectiveDueAmount)}</span>
             </div>
           </div>
         )}
@@ -595,7 +832,7 @@ export function BorrowerRepayWidget({
           </div>
         </div>
 
-        {dueAmount > 0 ? (
+        {effectiveDueAmount > 0 ? (
           <>
             {/* Quick pay buttons */}
             <div
@@ -608,7 +845,7 @@ export function BorrowerRepayWidget({
               }}
             >
               <button
-                onClick={() => handleRepayOnChain(dueAmount)}
+                onClick={() => handleRepayOnChain(effectiveDueAmount)}
                 disabled={isBusy}
                 style={{
                   flex: 2,
@@ -634,12 +871,14 @@ export function BorrowerRepayWidget({
                   ? step === "connecting"
                     ? `Connecting ${activeWalletLabel}...`
                     : STEP_LABELS[step]
-                  : `💳 Pay Full — ${formatCurrency(dueAmount)}`}
+                  : earlyPayoffEnabled && earlyCalc.isEarly
+                  ? `⚡ Pay Early Payoff — ${formatCurrency(effectiveDueAmount)}`
+                  : `💳 Pay Full — ${formatCurrency(effectiveDueAmount)}`}
               </button>
               <button
                 onClick={() =>
                   handleRepayOnChain(
-                    Math.max(0.01, +(dueAmount * 0.25).toFixed(2)),
+                    Math.max(0.01, +(effectiveDueAmount * 0.25).toFixed(2)),
                   )
                 }
                 disabled={isBusy}
@@ -670,11 +909,11 @@ export function BorrowerRepayWidget({
                 type="number"
                 step="0.01"
                 min="0.01"
-                max={dueAmount}
+                max={effectiveDueAmount}
                 value={customAmount}
                 onChange={(e) => setCustomAmount(e.target.value)}
                 onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                placeholder="Custom amount (XLM)"
+                placeholder={`Custom amount (max ${formatCurrency(effectiveDueAmount)})`}
                 disabled={isBusy}
                 style={{
                   flex: 1,
@@ -691,9 +930,9 @@ export function BorrowerRepayWidget({
               <button
                 onClick={() => {
                   const n = parseFloat(customAmount);
-                  if (!n || n <= 0 || n > dueAmount) {
+                  if (!n || n <= 0 || n > effectiveDueAmount) {
                     setError(
-                      `Enter a value between 0.01 and ${formatCurrency(dueAmount)}`,
+                      `Enter a value between 0.01 and ${formatCurrency(effectiveDueAmount)}`,
                     );
                     return;
                   }
