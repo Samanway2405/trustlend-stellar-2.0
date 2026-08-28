@@ -15,7 +15,7 @@ import {
 } from "@/lib/risk/parameters";
 
 // In-memory persistent state for active session (mirrors on-chain Soroban contract settings)
-let currentRiskState: RiskParametersState = {
+const currentRiskState: RiskParametersState = {
   assets: [...DEFAULT_ASSET_RISK_CONFIGS],
   curves: [...DEFAULT_INTEREST_RATE_CURVES],
   protocolFees: { ...DEFAULT_PROTOCOL_FEES },

@@ -293,7 +293,7 @@ export function calculateLenderYieldAnalytics({
 
   // 6. Generate Projected Future Yield trend (Next 12 months)
   const projectedYieldTrend: YieldDataPoint[] = [];
-  let futureCumYield = totalHistoricalYield;
+  const futureCumYield = totalHistoricalYield;
 
   const projectionIntervals = [
     { label: "+1 Month (30d)", days: 30 },

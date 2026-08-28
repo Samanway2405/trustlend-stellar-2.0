@@ -426,16 +426,16 @@ export function AdminRiskParametersDashboard({
 
       {/* ── Tab Navigation ── */}
       <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid rgba(17,24,39,0.08)", paddingBottom: "0.5rem" }}>
-        {[
+        {([
           { id: "collateral", label: "Collateral & LTV Limits", emoji: "🛡️" },
           { id: "curves", label: "Interest Rate Curves", emoji: "📈" },
           { id: "fees", label: "Protocol Fees & Security", emoji: "⚙️" },
           { id: "audit", label: "Audit & Adjustment Log", emoji: "📋" },
-        ].map((tab) => (
+        ] as const).map((tab) => (
           <button
             key={tab.id}
             type="button"
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id)}
             style={{
               padding: "0.6rem 1rem",
               borderRadius: "0.5rem",

@@ -67,7 +67,9 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 
 export function loadOracleConfig(
   argv: string[] = process.argv.slice(2),
-  env: NodeJS.ProcessEnv = process.env,
+  // Only optional string vars are read, so accept any env-shaped record. Using
+  // NodeJS.ProcessEnv here would force callers (tests) to supply NODE_ENV.
+  env: Record<string, string | undefined> = process.env,
 ): OracleKeeperConfig {
   const args = parseArgs(argv);
 

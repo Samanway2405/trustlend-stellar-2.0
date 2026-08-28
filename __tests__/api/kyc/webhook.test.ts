@@ -195,7 +195,7 @@ describe("POST /api/kyc/webhook", () => {
   });
 
   it("serves a health check on GET", async () => {
-    const response = await GET();
+    const response = await GET(new NextRequest("http://localhost/api/kyc/webhook"));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ok: true, provider: "SumSub" });
