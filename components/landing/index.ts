@@ -1,8 +1,10 @@
 export { AboutSection } from "@/components/landing/AboutSection";
 export { FaqSection } from "@/components/landing/FaqSection";
 export { HeroSection } from "@/components/landing/HeroSection";
+export { HowItWorksSection } from "@/components/landing/HowItWorksSection";
 export { ProcessSection } from "@/components/landing/ProcessSection";
 export { ServicesSection } from "@/components/landing/ServicesSection";
 export { SiteFooter } from "@/components/landing/SiteFooter";
 export { SiteHeader } from "@/components/landing/SiteHeader";
+export { TrustBadgesSection } from "@/components/landing/TrustBadgesSection";
 export { UspSection } from "@/components/landing/UspSection";
