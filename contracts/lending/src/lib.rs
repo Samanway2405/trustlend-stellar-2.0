@@ -543,6 +543,42 @@ impl LendingContract {
             .expect("Contract not initialised")
     }
 
+    /// Sweep accidentally sent unsupported tokens out of the contract (admin only).
+    /// Prevents sweeping whitelisted collateral/lending assets to protect contract liquidity and collateral.
+    pub fn sweep_tokens(
+        env: Env,
+        caller: Address,
+        token: Address,
+        recipient: Address,
+        amount: i128,
+    ) {
+        caller.require_auth();
+        Self::assert_admin(&env, &caller);
+
+        if amount <= 0 {
+            panic!("Sweep amount must be positive");
+        }
+
+        if Self::is_asset_whitelisted(env.clone(), token.clone()) {
+            panic!("Cannot sweep supported whitelisted asset");
+        }
+
+        let token_client = token::Client::new(&env, &token);
+        let contract_address = env.current_contract_address();
+        let balance = token_client.balance(&contract_address);
+
+        if amount > balance {
+            panic!("Insufficient balance to sweep");
+        }
+
+        token_client.transfer(&contract_address, &recipient, &amount);
+
+        env.events().publish(
+            (symbol_short!("lending"), symbol_short!("sweep")),
+            (token, recipient, amount),
+        );
+    }
+
     // ── DAO governance of the platform fee ──────────────────────────────────────
 
     /// Link the Governance contract (multisig-gated, one-time bootstrap).
