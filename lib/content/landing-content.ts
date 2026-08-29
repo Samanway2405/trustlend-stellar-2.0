@@ -2,6 +2,8 @@ import type {
   AboutContent,
   FaqItem,
   FooterLink,
+  HowItWorksStep,
+  TrustBadge,
   HighlightContent,
   HeroContent,
   MetricItem,
@@ -11,11 +13,16 @@ import type {
   StepItem,
 } from "@/types/landing";
 
+/** Canonical repository, used for every security/source link below. */
+const REPO_URL = "https://github.com/thisisouvik/trustlend-stellar";
+
 export const navItems: NavItem[] = [
   { label: "Home", href: "#home" },
   { label: "Introduce", href: "#introduce" },
+  { label: "How it works", href: "#how-it-works" },
   { label: "Journey", href: "#journey" },
   { label: "P2P", href: "#p2p" },
+  { label: "Security", href: "#security" },
   { label: "FAQ", href: "#faq" },
 ];
 
@@ -143,5 +150,79 @@ export const footerLinks: FooterLink[] = [
   { label: "Journey", href: "#journey" },
   { label: "P2P", href: "#p2p" },
   { label: "FAQ", href: "#faq" },
+  { label: "Security", href: "#security" },
   { label: "Borrowing Guide", href: "/docs/borrowing" },
+];
+
+export const howItWorksSteps: HowItWorksStep[] = [
+  {
+    id: "connect",
+    caption: "Connect",
+    title: "Sign in with your Stellar wallet",
+    description:
+      "Authenticate by signing a SEP-10 challenge with Freighter, xBull, Albedo, or any mobile wallet over WalletConnect. No password, and TrustLend never holds your keys.",
+    visual: "wallet",
+  },
+  {
+    id: "reputation",
+    caption: "Build trust",
+    title: "Earn an on-chain reputation score",
+    description:
+      "Repayment history, lending activity, and account age are scored by the borrower_reputation contract. The inputs and the maths are public, so your score is auditable rather than opaque.",
+    visual: "reputation",
+  },
+  {
+    id: "funding",
+    caption: "Get funded",
+    title: "Borrow from a transparent pool",
+    description:
+      "Your score sets your limit and rate. Lender capital is released by the escrow contract, so funds move under contract rules instead of trusting a counterparty.",
+    visual: "funding",
+  },
+  {
+    id: "repayment",
+    caption: "Grow",
+    title: "Repay and unlock more credit",
+    description:
+      "Each on-time repayment settles the escrow and raises your score, which widens your limit and lowers your rate on the next loan.",
+    visual: "repayment",
+  },
+];
+
+/**
+ * Trust signals shown on the landing page.
+ *
+ * Each entry links to something a visitor can open and verify themselves. Do
+ * not add a badge for a third-party audit or certification the project has not
+ * actually undergone — an unverifiable claim here is worse than no badge.
+ */
+export const trustBadges: TrustBadge[] = [
+  {
+    label: "Security policy & bug bounty",
+    detail: "Coordinated disclosure process with a 48-hour response SLA.",
+    href: `${REPO_URL}/blob/main/SECURITY.md`,
+    icon: "shield",
+    external: true,
+  },
+  {
+    label: "Formally verified contracts",
+    detail: "Core accounting invariants proved with Kani and property tests in CI.",
+    href: `${REPO_URL}/blob/main/FORMAL_VERIFICATION.md`,
+    icon: "verified",
+    external: true,
+  },
+  {
+    label: "Automated security audits",
+    detail: "Every commit runs cargo-audit and Clippy against the Soroban contracts.",
+    href: `${REPO_URL}/blob/main/.github/workflows/contract-security.yml`,
+    icon: "openSource",
+    external: true,
+  },
+  {
+    label: "Non-custodial on Stellar",
+    detail: "Open-source Soroban contracts you can read and verify on-chain.",
+    href: `${REPO_URL}/tree/main/contracts`,
+    icon: "chain",
+    external: true,
+  },
 ];

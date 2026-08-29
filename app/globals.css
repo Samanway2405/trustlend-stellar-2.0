@@ -4923,3 +4923,264 @@ a {
     transition: none;
   }
 }
+
+/* ── How it works (animated walkthrough) ─────────────────────────────────── */
+.how-section {
+  background-image: linear-gradient(180deg, rgba(248, 247, 254, 0.92), rgba(244, 249, 255, 0.85));
+}
+
+.how-title {
+  margin: 0;
+  text-align: center;
+  color: #1f2a55;
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.how-subtitle {
+  margin: 0.8rem auto 0;
+  max-width: 620px;
+  text-align: center;
+  color: #5c6486;
+}
+
+.how-layout {
+  display: grid;
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+  .how-layout {
+    grid-template-columns: 0.95fr 1.05fr;
+    align-items: start;
+  }
+}
+
+.how-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.how-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  width: 100%;
+  overflow: hidden;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(104, 116, 164, 0.2);
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.how-step:hover {
+  border-color: rgba(127, 47, 209, 0.4);
+}
+
+.how-step--active {
+  border-color: rgba(127, 47, 209, 0.55);
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(75, 89, 130, 0.1);
+}
+
+.how-step-index {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  background: #eef2ff;
+  color: #5f6a9f;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid #d7ddf3;
+}
+
+.how-step--active .how-step-index {
+  background: linear-gradient(135deg, #7f2fd1, #25d39f);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.how-step-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.how-step-caption {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #7f2fd1;
+}
+
+.how-step-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2a2f50;
+}
+
+.how-step-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #7f2fd1, #25d39f);
+}
+
+.how-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 380px;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(120, 133, 172, 0.2);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 34px rgba(75, 89, 130, 0.08);
+}
+
+.how-stage-inner {
+  flex: 1;
+}
+
+.how-visual {
+  border-radius: 0.85rem;
+  background: linear-gradient(160deg, rgba(127, 47, 209, 0.06), rgba(37, 211, 159, 0.07));
+  padding: 0.75rem;
+}
+
+.how-visual-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.how-stage-title {
+  margin: 1.15rem 0 0;
+  font-size: 1.3rem;
+  color: #2c2a53;
+}
+
+.how-stage-copy {
+  margin: 0.5rem 0 0;
+  color: #5c6486;
+  line-height: 1.6;
+}
+
+.how-cta {
+  align-self: flex-start;
+  margin-top: 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.7rem 1.5rem;
+  color: #ffffff;
+  font-weight: 700;
+  background: linear-gradient(135deg, #7f2fd1, #25d39f);
+}
+
+/* ── Trust badges & security ─────────────────────────────────────────────── */
+.trust-section {
+  background: linear-gradient(180deg, #30054f 0%, #25003f 100%);
+}
+
+.trust-title {
+  margin: 0;
+  text-align: center;
+  color: #ffffff;
+  font-size: clamp(1.8rem, 3.3vw, 2.4rem);
+}
+
+.trust-subtitle {
+  margin: 0.8rem auto 0;
+  max-width: 640px;
+  text-align: center;
+  color: #d5cde8;
+}
+
+.trust-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.trust-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 1.1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(221, 204, 255, 0.28);
+  background: rgba(255, 255, 255, 0.07);
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+.trust-card:hover {
+  border-color: rgba(37, 211, 159, 0.6);
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.trust-card-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.7rem;
+  background: rgba(37, 211, 159, 0.16);
+  color: #2ad39f;
+}
+
+.trust-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.trust-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 0.95rem;
+}
+
+.trust-card-detail {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #cfc4e6;
+}
+
+.trust-footnote {
+  margin: 1.6rem auto 0;
+  max-width: 680px;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #b3a7cf;
+}
+
+/* Visually hidden, still announced by screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
