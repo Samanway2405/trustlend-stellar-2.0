@@ -2698,3 +2698,107 @@ fn test_activation_survives_broken_referral_contract() {
 
     assert_eq!(client.get_loan(&loan_id).status, LoanStatus::Active);
 }
+
+// ─── Sweep Unsupported Tokens Tests ──────────────────────────────────────────
+
+#[test]
+fn test_sweep_unsupported_tokens_success() {
+    let (env, contract_id, admin, _borrower, _collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    // Create an unsupported token (not whitelisted)
+    let token_admin = Address::generate(&env);
+    let unsupported_token = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let token_client = token::Client::new(&env, &unsupported_token);
+    let token_admin_client = token::StellarAssetClient::new(&env, &unsupported_token);
+
+    // User accidentally sends 5,000 tokens to the contract
+    let accidental_amount: i128 = 5_000_0000000;
+    token_admin_client.mint(&contract_id, &accidental_amount);
+    assert_eq!(token_client.balance(&contract_id), accidental_amount);
+
+    let recovery_recipient = Address::generate(&env);
+    let sweep_amount: i128 = 3_000_0000000;
+
+    // Admin sweeps 3,000 tokens to recovery recipient
+    client.sweep_tokens(&admin, &unsupported_token, &recovery_recipient, &sweep_amount);
+
+    assert_eq!(token_client.balance(&recovery_recipient), sweep_amount);
+    assert_eq!(
+        token_client.balance(&contract_id),
+        accidental_amount - sweep_amount
+    );
+
+    // Admin sweeps remaining 2,000 tokens
+    client.sweep_tokens(
+        &admin,
+        &unsupported_token,
+        &recovery_recipient,
+        &(accidental_amount - sweep_amount),
+    );
+    assert_eq!(token_client.balance(&contract_id), 0);
+    assert_eq!(token_client.balance(&recovery_recipient), accidental_amount);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorised: caller is not admin")]
+fn test_sweep_unsupported_tokens_non_admin_rejected() {
+    let (env, contract_id, _admin, borrower, _collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let unsupported_token = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+
+    let recipient = Address::generate(&env);
+    client.sweep_tokens(&borrower, &unsupported_token, &recipient, &1_000_0000000);
+}
+
+#[test]
+#[should_panic(expected = "Cannot sweep supported whitelisted asset")]
+fn test_sweep_whitelisted_asset_rejected() {
+    let (env, contract_id, admin, _borrower, collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let recipient = Address::generate(&env);
+    // Attempting to sweep a whitelisted asset must be rejected
+    client.sweep_tokens(&admin, &collateral_asset, &recipient, &1_000_0000000);
+}
+
+#[test]
+#[should_panic(expected = "Sweep amount must be positive")]
+fn test_sweep_zero_or_negative_amount_rejected() {
+    let (env, contract_id, admin, _borrower, _collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let unsupported_token = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+
+    let recipient = Address::generate(&env);
+    client.sweep_tokens(&admin, &unsupported_token, &recipient, &0);
+}
+
+#[test]
+#[should_panic(expected = "Insufficient balance to sweep")]
+fn test_sweep_amount_exceeding_balance_rejected() {
+    let (env, contract_id, admin, _borrower, _collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let unsupported_token = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let token_admin_client = token::StellarAssetClient::new(&env, &unsupported_token);
+
+    // Contract has only 100 tokens
+    token_admin_client.mint(&contract_id, &100);
+
+    let recipient = Address::generate(&env);
+    // Attempting to sweep 200 tokens must fail
+    client.sweep_tokens(&admin, &unsupported_token, &recipient, &200);
+}
