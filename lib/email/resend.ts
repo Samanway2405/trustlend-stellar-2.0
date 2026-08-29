@@ -107,7 +107,7 @@ export async function sendLoanFundedEmail({
     userId,
     loanFundedTemplate({
       amount,
-      dashboardUrl: appUrl(`/dashboard/borrower/repay?loan=${encodeURIComponent(loanId)}`),
+      dashboardUrl: appUrl(`/dashboard/borrower/loans?loan=${encodeURIComponent(loanId)}`),
     }),
   );
 }

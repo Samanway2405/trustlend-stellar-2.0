@@ -71,7 +71,7 @@ export function loanApprovedTemplate({
     preview: `Your ${formatAmount(amount)} loan request has been approved.`,
     body: `<p>Your loan request for <strong>${formatAmount(amount)}</strong> has been approved and matched with platform liquidity.</p><p>We will update you again when funding is completed.</p>`,
     actionUrl: dashboardUrl,
-    actionLabel: "View Loan",
+    actionLabel: "View Loan Details",
   });
 }
 
@@ -84,10 +84,10 @@ export function loanFundedTemplate({
 }) {
   return baseEmail({
     title: "Loan Funded",
-    preview: `Your ${formatAmount(amount)} loan has been funded.`,
-    body: `<p>Good news. Your loan for <strong>${formatAmount(amount)}</strong> has been funded.</p><p>The funds have been sent to your Stellar wallet, and repayment details are available in your dashboard.</p>`,
+    preview: `Your ${formatAmount(amount)} loan request has been fully funded.`,
+    body: `<p>Good news! Your loan request for <strong>${formatAmount(amount)}</strong> has been fully funded by a lender.</p><p>The funds have been sent to your Stellar wallet, and loan details and repayment schedule are available in your dashboard.</p>`,
     actionUrl: dashboardUrl,
-    actionLabel: "Open Dashboard",
+    actionLabel: "View Loan Details",
   });
 }
 
