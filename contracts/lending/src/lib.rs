@@ -278,6 +278,9 @@ const MAX_COLLATERAL_FACTOR_BPS: u32 = 9500;
 /// Minimum allowed collateral factor (10% LTV).
 const MIN_COLLATERAL_FACTOR_BPS: u32 = 1000;
 
+/// Minimum borrow amount constraint to prevent spam/dust loans (1 XLM = 10_000_000 stroops).
+pub const MIN_BORROW_AMOUNT: i128 = 10_000_000;
+
 // ─── Contract ─────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -1038,6 +1041,9 @@ impl LendingContract {
         if amount <= 0 {
             panic!("Loan amount must be positive");
         }
+        if amount < MIN_BORROW_AMOUNT {
+            panic!("Loan amount below minimum borrow threshold");
+        }
         if amount > max_loan_amount {
             panic!("Amount exceeds reputation-based limit");
         }
@@ -1471,6 +1477,11 @@ impl LendingContract {
             .instance()
             .get(&DataKey::LoanCount)
             .unwrap_or(0)
+    }
+
+    /// Get the minimum allowed borrow amount in stroops (1 XLM = 10_000_000 stroops).
+    pub fn get_min_borrow_amount(_env: Env) -> i128 {
+        MIN_BORROW_AMOUNT
     }
 
     /// Check whether a loan is overdue.

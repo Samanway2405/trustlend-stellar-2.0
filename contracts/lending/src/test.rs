@@ -372,6 +372,64 @@ fn test_zero_amount_is_rejected() {
     );
 }
 
+/// Dust loan amounts below MIN_BORROW_AMOUNT (1 XLM = 10_000_000 stroops) must be rejected.
+#[test]
+#[should_panic(expected = "Loan amount below minimum borrow threshold")]
+fn test_dust_loan_below_min_borrow_amount_is_rejected() {
+    let (env, contract_id, _admin, borrower, collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    // 1 stroop (0.0000001 XLM) dust loan attempt
+    client.create_loan_request(
+        &borrower,
+        &LoanRequestInput {
+            amount: 1,
+            duration_days: 30,
+            interest_rate_bps: 1500,
+            max_loan_amount: 100_000_0000000,
+            collateral_entries: vec![
+                &env,
+                CollateralEntry {
+                    asset: collateral_asset.clone(),
+                    amount: 100_000_0000000,
+                },
+            ],
+            rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
+        },
+    );
+}
+
+/// Boundary check: Loan amount exactly at MIN_BORROW_AMOUNT (10_000_000 stroops = 1 XLM) is accepted.
+#[test]
+fn test_min_borrow_amount_boundary_accepted() {
+    let (env, contract_id, _admin, borrower, collateral_asset) = setup();
+    let client = LendingContractClient::new(&env, &contract_id);
+
+    let loan_id = client.create_loan_request(
+        &borrower,
+        &LoanRequestInput {
+            amount: MIN_BORROW_AMOUNT,
+            duration_days: 30,
+            interest_rate_bps: 1500,
+            max_loan_amount: 100_000_0000000,
+            collateral_entries: vec![
+                &env,
+                CollateralEntry {
+                    asset: collateral_asset.clone(),
+                    amount: 100_000_0000000,
+                },
+            ],
+            rate_model: InterestRateModel::Fixed,
+            reputation_tier: 0,
+        },
+    );
+
+    let loan = client.get_loan(&loan_id);
+    assert_eq!(loan.amount, MIN_BORROW_AMOUNT);
+    assert_eq!(client.get_min_borrow_amount(), MIN_BORROW_AMOUNT);
+}
+
 /// Amount exceeding the reputation-based limit must be rejected.
 #[test]
 #[should_panic(expected = "Amount exceeds reputation-based limit")]

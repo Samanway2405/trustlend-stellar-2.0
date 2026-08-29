@@ -33,8 +33,13 @@ export async function POST(request: NextRequest) {
     const durationDays: number = body.durationDays ?? body.duration_days;
     const rateModel: string = (body.rateModel ?? body.rate_model ?? "fixed").toLowerCase();
 
-    if (!amount || amount <= 0) {
-      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    const MIN_BORROW_AMOUNT = 1; // Minimum 1 XLM to prevent dust/spam loans
+
+    if (!amount || amount < MIN_BORROW_AMOUNT) {
+      return NextResponse.json(
+        { error: `Invalid amount: minimum borrow amount is ${MIN_BORROW_AMOUNT} XLM` },
+        { status: 400 }
+      );
     }
 
     if (!durationDays || ![30, 60, 90].includes(Number(durationDays))) {
