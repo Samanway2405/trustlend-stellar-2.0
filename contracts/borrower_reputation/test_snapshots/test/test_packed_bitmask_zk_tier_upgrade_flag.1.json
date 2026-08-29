@@ -47,7 +47,6 @@
         }
       ]
     ],
-    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
@@ -64,10 +63,10 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "u32": 3
+                  "u32": 2
                 },
                 {
-                  "bytes": "5858585858585858585858585858585858585858585858585858585858585858"
+                  "bytes": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d"
                 }
               ]
             }
@@ -180,7 +179,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 500
+                          "lo": 150
                         }
                       }
                     },
@@ -191,7 +190,7 @@
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Gold"
+                            "symbol": "Silver"
                           }
                         ]
                       }

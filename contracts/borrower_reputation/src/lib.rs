@@ -29,6 +29,12 @@ pub enum ReputationEvent {
     LateWarning,       // -50 pts (applied on Day 8 of overdue)
 }
 
+/// Bitmask flags for BorrowerProfile to pack multiple boolean flags into a single u32.
+pub const FLAG_IS_FROZEN: u32 = 1 << 0;   // Bit 0: Account is frozen
+pub const FLAG_IS_ACTIVE: u32 = 1 << 1;   // Bit 1: Account is active
+pub const FLAG_IS_VERIFIED: u32 = 1 << 2; // Bit 2: KYC / identity verified
+pub const FLAG_ZK_UPGRADED: u32 = 1 << 3; // Bit 3: Upgraded via ZK credit proof
+
 /// Full on-chain borrower profile stored in persistent ledger storage.
 #[contracttype]
 #[derive(Clone)]
@@ -46,8 +52,69 @@ pub struct BorrowerProfile {
     pub loan_count: u32,
     /// Ledger timestamp of profile creation
     pub created_at: u64,
-    pub is_frozen: bool,
+    /// Packed bitmask flags (is_frozen, is_active, is_verified, zk_upgraded, etc.)
+    pub flags: u32,
     pub freeze_reason: String,
+}
+
+impl BorrowerProfile {
+    #[inline]
+    pub fn is_frozen(&self) -> bool {
+        (self.flags & FLAG_IS_FROZEN) != 0
+    }
+
+    #[inline]
+    pub fn set_frozen(&mut self, frozen: bool) {
+        if frozen {
+            self.flags |= FLAG_IS_FROZEN;
+            self.flags &= !FLAG_IS_ACTIVE;
+        } else {
+            self.flags &= !FLAG_IS_FROZEN;
+            self.flags |= FLAG_IS_ACTIVE;
+        }
+    }
+
+    #[inline]
+    pub fn is_active(&self) -> bool {
+        (self.flags & FLAG_IS_ACTIVE) != 0
+    }
+
+    #[inline]
+    pub fn set_active(&mut self, active: bool) {
+        if active {
+            self.flags |= FLAG_IS_ACTIVE;
+        } else {
+            self.flags &= !FLAG_IS_ACTIVE;
+        }
+    }
+
+    #[inline]
+    pub fn is_verified(&self) -> bool {
+        (self.flags & FLAG_IS_VERIFIED) != 0
+    }
+
+    #[inline]
+    pub fn set_verified(&mut self, verified: bool) {
+        if verified {
+            self.flags |= FLAG_IS_VERIFIED;
+        } else {
+            self.flags &= !FLAG_IS_VERIFIED;
+        }
+    }
+
+    #[inline]
+    pub fn is_zk_upgraded(&self) -> bool {
+        (self.flags & FLAG_ZK_UPGRADED) != 0
+    }
+
+    #[inline]
+    pub fn set_zk_upgraded(&mut self, upgraded: bool) {
+        if upgraded {
+            self.flags |= FLAG_ZK_UPGRADED;
+        } else {
+            self.flags &= !FLAG_ZK_UPGRADED;
+        }
+    }
 }
 
 /// Verified off-chain credit data ingested from a Decentralized Credit Oracle.
@@ -285,7 +352,7 @@ impl BorrowerReputationContract {
             default_count: 0,
             loan_count: 0,
             created_at: env.ledger().timestamp(),
-            is_frozen: false,
+            flags: FLAG_IS_ACTIVE,
             freeze_reason: String::from_str(&env, ""),
         };
         env.storage().persistent().set(&key, &profile);
@@ -324,7 +391,7 @@ impl BorrowerReputationContract {
     pub fn calculate_max_loan(env: Env, borrower: Address) -> i128 {
         let profile = Self::get_profile(env.clone(), borrower.clone());
         let base = Self::tier_max_loan(&profile.reputation_tier);
-        if profile.is_frozen {
+        if profile.is_frozen() {
             return base; // frozen accounts get no oracle boost
         }
         Self::apply_oracle_boost(&env, &borrower, base)
@@ -403,7 +470,7 @@ impl BorrowerReputationContract {
 
         // Borrower must have an on-chain profile, and must not be frozen.
         let profile = Self::get_profile(env.clone(), borrower.clone());
-        if profile.is_frozen {
+        if profile.is_frozen() {
             panic!("Cannot post oracle data for a frozen account");
         }
 
@@ -478,7 +545,7 @@ impl BorrowerReputationContract {
             .get(&key)
             .expect("Profile not found");
 
-        if profile.is_frozen {
+        if profile.is_frozen() {
             panic!("Cannot upgrade frozen account");
         }
 
@@ -502,6 +569,7 @@ impl BorrowerReputationContract {
             profile.reputation_score = min_score;
         }
         profile.reputation_tier = new_tier;
+        profile.set_zk_upgraded(true);
 
         env.storage().persistent().set(&key, &profile);
 
@@ -532,7 +600,7 @@ impl BorrowerReputationContract {
             .get(&key)
             .expect("Profile not found");
 
-        if profile.is_frozen {
+        if profile.is_frozen() {
             panic!("Cannot modify frozen account");
         }
 
@@ -597,7 +665,7 @@ impl BorrowerReputationContract {
             .get(&key)
             .expect("Profile not found");
 
-        profile.is_frozen = true;
+        profile.set_frozen(true);
         profile.freeze_reason = reason;
         profile.reputation_score = 0;
         profile.reputation_tier = ReputationTier::None;
@@ -621,7 +689,7 @@ impl BorrowerReputationContract {
             .get(&key)
             .expect("Profile not found");
 
-        profile.is_frozen = false;
+        profile.set_frozen(false);
         profile.freeze_reason = String::from_str(&env, "");
         env.storage().persistent().set(&key, &profile);
 
@@ -632,7 +700,34 @@ impl BorrowerReputationContract {
     }
 
     pub fn is_frozen(env: Env, borrower: Address) -> bool {
-        Self::get_profile(env, borrower).is_frozen
+        Self::get_profile(env, borrower).is_frozen()
+    }
+
+    pub fn is_active(env: Env, borrower: Address) -> bool {
+        Self::get_profile(env, borrower).is_active()
+    }
+
+    pub fn is_verified(env: Env, borrower: Address) -> bool {
+        Self::get_profile(env, borrower).is_verified()
+    }
+
+    pub fn get_profile_flags(env: Env, borrower: Address) -> u32 {
+        Self::get_profile(env, borrower).flags
+    }
+
+    pub fn set_verified(env: Env, admin: Address, borrower: Address, verified: bool) {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+
+        let key = DataKey::BorrowerProfile(borrower.clone());
+        let mut profile: BorrowerProfile = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .expect("Profile not found");
+
+        profile.set_verified(verified);
+        env.storage().persistent().set(&key, &profile);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

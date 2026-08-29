@@ -494,3 +494,58 @@ fn test_zk_tier_upgrade_unauthorized_panics() {
     let nullifier = BytesN::from_array(&env, &[99u8; 32]);
     client.apply_zk_tier_upgrade(&random_caller, &borrower, &2, &nullifier);
 }
+
+// ─── Packed Bitmask Flags Tests ──────────────────────────────────────────────
+
+#[test]
+fn test_packed_bitmask_flags_lifecycle() {
+    let (env, contract_id, admin, borrower) = setup();
+    let client = BorrowerReputationContractClient::new(&env, &contract_id);
+
+    // 1. Initial profile: is_active should be true, is_frozen & is_verified false
+    assert!(client.is_active(&borrower));
+    assert!(!client.is_frozen(&borrower));
+    assert!(!client.is_verified(&borrower));
+    assert_eq!(client.get_profile_flags(&borrower), FLAG_IS_ACTIVE);
+
+    // 2. Admin sets KYC verified flag
+    client.set_verified(&admin, &borrower, &true);
+    assert!(client.is_verified(&borrower));
+    assert!(client.is_active(&borrower));
+    assert_eq!(
+        client.get_profile_flags(&borrower),
+        FLAG_IS_ACTIVE | FLAG_IS_VERIFIED
+    );
+
+    // 3. Admin freezes the account
+    client.freeze_account(&admin, &borrower, &String::from_str(&env, "suspicious"));
+    assert!(client.is_frozen(&borrower));
+    assert!(!client.is_active(&borrower));
+    assert!((client.get_profile_flags(&borrower) & FLAG_IS_FROZEN) != 0);
+
+    // 4. Admin unfreezes the account
+    client.unfreeze_account(&admin, &borrower);
+    assert!(!client.is_frozen(&borrower));
+    assert!(client.is_active(&borrower));
+
+    // 5. Admin clears KYC verification
+    client.set_verified(&admin, &borrower, &false);
+    assert!(!client.is_verified(&borrower));
+    assert_eq!(client.get_profile_flags(&borrower), FLAG_IS_ACTIVE);
+}
+
+#[test]
+fn test_packed_bitmask_zk_tier_upgrade_flag() {
+    let (env, contract_id, admin, borrower) = setup();
+    let client = BorrowerReputationContractClient::new(&env, &contract_id);
+
+    let verifier = Address::generate(&env);
+    client.set_zk_verifier(&admin, &verifier);
+
+    let nullifier = BytesN::from_array(&env, &[77u8; 32]);
+    client.apply_zk_tier_upgrade(&verifier, &borrower, &2, &nullifier);
+
+    let flags = client.get_profile_flags(&borrower);
+    assert!((flags & FLAG_ZK_UPGRADED) != 0);
+    assert!((flags & FLAG_IS_ACTIVE) != 0);
+}

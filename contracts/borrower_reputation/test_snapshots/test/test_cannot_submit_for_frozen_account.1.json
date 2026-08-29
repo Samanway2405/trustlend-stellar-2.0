@@ -176,18 +176,18 @@
                     },
                     {
                       "key": {
-                        "symbol": "freeze_reason"
+                        "symbol": "flags"
                       },
                       "val": {
-                        "string": "fraud"
+                        "u32": 1
                       }
                     },
                     {
                       "key": {
-                        "symbol": "is_frozen"
+                        "symbol": "freeze_reason"
                       },
                       "val": {
-                        "bool": true
+                        "string": "fraud"
                       }
                     },
                     {
