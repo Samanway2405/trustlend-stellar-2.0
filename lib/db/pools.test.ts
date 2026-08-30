@@ -36,6 +36,7 @@ const MOCK_POOLS: Pool[] = [
     total_liquidity: 50000,
     available_liquidity: 25000,
     total_borrowed: 25000,
+    borrow_cap: null,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
   },
@@ -48,6 +49,7 @@ const MOCK_POOLS: Pool[] = [
     total_liquidity: 100000,
     available_liquidity: 100000,
     total_borrowed: 0,
+    borrow_cap: null,
     created_at: "2024-01-02T00:00:00Z",
     updated_at: "2024-01-02T00:00:00Z",
   },
@@ -60,6 +62,7 @@ const MOCK_POOLS: Pool[] = [
     total_liquidity: 30000,
     available_liquidity: 30000,
     total_borrowed: 0,
+    borrow_cap: null,
     created_at: "2024-01-03T00:00:00Z",
     updated_at: "2024-01-03T00:00:00Z",
   },
@@ -166,7 +169,7 @@ describe("fetchPools", () => {
 
     // Verify explicit column selection (no SELECT *)
     expect(mockQuery.select).toHaveBeenCalledWith(
-      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, created_at, updated_at",
+      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, borrow_cap, created_at, updated_at",
       expect.any(Object)
     );
 
@@ -477,5 +480,138 @@ describe("Performance: Query Count Verification", () => {
 
     // Should be 2 total: 1 for pools, 1 for loans
     expect(queryCount).toBe(2);
+  });
+});
+
+describe("Pool borrow_cap field", () => {
+  const POOLS_WITH_CAP: Pool[] = [
+    {
+      id: "pool-capped",
+      name: "Capped Pool",
+      description: null,
+      status: "active",
+      apr_bps: 1500,
+      total_liquidity: 100000,
+      available_liquidity: 50000,
+      total_borrowed: 30000,
+      borrow_cap: 50000,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+    },
+    {
+      id: "pool-uncapped",
+      name: "Uncapped Pool",
+      description: null,
+      status: "active",
+      apr_bps: 1500,
+      total_liquidity: 100000,
+      available_liquidity: 100000,
+      total_borrowed: 0,
+      borrow_cap: null,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+    },
+  ];
+
+  it("should include borrow_cap in Pool type (null for uncapped)", () => {
+    const pool = POOLS_WITH_CAP[1];
+    expect(pool.borrow_cap).toBeNull();
+  });
+
+  it("should include borrow_cap in Pool type (number for capped)", () => {
+    const pool = POOLS_WITH_CAP[0];
+    expect(pool.borrow_cap).toBe(50000);
+  });
+
+  it("should fetch borrow_cap as part of pool data from DB", async () => {
+    const mockFrom = vi.fn();
+    const mockQuery = createMockQuery([
+      { ...POOLS_WITH_CAP[0] },
+    ]);
+    mockFrom.mockReturnValue(mockQuery);
+
+    const client = createMockSupabaseClient({ from: mockFrom });
+    const result = await fetchPoolById(client, "pool-capped");
+
+    expect(result).not.toBeNull();
+    expect(result?.borrow_cap).toBe(50000);
+  });
+
+  it("should select borrow_cap column in fetchPools", async () => {
+    const mockFrom = vi.fn();
+    const mockQuery = createMockQuery(POOLS_WITH_CAP, 2);
+    mockFrom.mockReturnValue(mockQuery);
+
+    const client = createMockSupabaseClient({ from: mockFrom });
+    await fetchPools(client);
+
+    // Verify borrow_cap is in the column list
+    expect(mockQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining("borrow_cap"),
+      expect.any(Object)
+    );
+  });
+
+  it("should select borrow_cap column in fetchActivePoolsWithLiquidity", async () => {
+    const mockFrom = vi.fn();
+    const mockQuery = createMockQuery(POOLS_WITH_CAP);
+    mockFrom.mockReturnValue(mockQuery);
+
+    const client = createMockSupabaseClient({ from: mockFrom });
+    await fetchActivePoolsWithLiquidity(client);
+
+    expect(mockQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining("borrow_cap")
+    );
+  });
+});
+
+describe("Borrow Cap Enforcement Logic", () => {
+  it("should detect when a loan would exceed pool borrow cap", () => {
+    const poolBorrowCap = 50000;
+    const totalBorrowed = 45000;
+    const loanAmount = 6000;
+
+    const wouldExceedCap = totalBorrowed + loanAmount > poolBorrowCap;
+    expect(wouldExceedCap).toBe(true);
+  });
+
+  it("should allow a loan that fits under the borrow cap", () => {
+    const poolBorrowCap = 50000;
+    const totalBorrowed = 30000;
+    const loanAmount = 10000;
+
+    const wouldExceedCap = totalBorrowed + loanAmount > poolBorrowCap;
+    expect(wouldExceedCap).toBe(false);
+  });
+
+  it("should allow a loan when pool has no borrow cap (null)", () => {
+    const poolBorrowCap: number | null = null;
+    const totalBorrowed = 999999;
+    const loanAmount = 999999;
+
+    const wouldExceedCap =
+      poolBorrowCap !== null &&
+      totalBorrowed + loanAmount > poolBorrowCap;
+    expect(wouldExceedCap).toBe(false);
+  });
+
+  it("should allow a loan exactly at the borrow cap", () => {
+    const poolBorrowCap = 50000;
+    const totalBorrowed = 40000;
+    const loanAmount = 10000;
+
+    // Exactly at cap: 40000 + 10000 = 50000 (not exceeded)
+    const wouldExceedCap = totalBorrowed + loanAmount > poolBorrowCap;
+    expect(wouldExceedCap).toBe(false);
+  });
+
+  it("should reject a loan 1 unit over the borrow cap", () => {
+    const poolBorrowCap = 50000;
+    const totalBorrowed = 40000;
+    const loanAmount = 10001;
+
+    const wouldExceedCap = totalBorrowed + loanAmount > poolBorrowCap;
+    expect(wouldExceedCap).toBe(true);
   });
 });

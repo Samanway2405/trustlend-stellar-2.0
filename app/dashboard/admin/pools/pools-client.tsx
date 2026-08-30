@@ -19,6 +19,7 @@ interface Pool {
   apr_bps: number;
   total_liquidity: number;
   available_liquidity: number;
+  borrow_cap: number | null;
 }
 
 interface Loan {
@@ -127,6 +128,32 @@ function CreatePoolForm({ onCreated }: { onCreated: () => void }) {
               <p className="workspace-hint">1500 = 15.00% APR</p>
             </div>
 
+            {/* Borrow Cap */}
+            <div>
+              <label
+                htmlFor="pool-borrow-cap"
+                className="workspace-label"
+              >
+                Borrow Cap (XLM){" "}
+                <span style={{ fontWeight: 400, opacity: 0.6, fontSize: "0.78rem" }}>
+                  (optional — leave blank for no cap)
+                </span>
+              </label>
+              <input
+                id="pool-borrow-cap"
+                name="borrow_cap"
+                type="number"
+                min="1"
+                step="any"
+                placeholder="e.g. 50000"
+                className="workspace-input"
+                onWheel={(e) => (e.target as HTMLInputElement).blur()}
+              />
+              <p className="workspace-hint">
+                Hard ceiling on total XLM that can be borrowed from this pool. Protects against over-exposure.
+              </p>
+            </div>
+
             {msg && (
               <p style={{ color: msg.ok ? "#22cf9d" : "#ff6b6b", fontSize: "0.875rem" }}>
                 {msg.text}
@@ -196,6 +223,17 @@ function PoolRow({ pool, onChanged }: { pool: Pool; onChanged: () => void }) {
       <td>{(pool.apr_bps / 100).toFixed(2)}%</td>
       <td>{formatCurrency(Number(pool.total_liquidity))}</td>
       <td>{formatCurrency(Number(pool.available_liquidity))}</td>
+      <td>
+        {pool.borrow_cap !== null && pool.borrow_cap !== undefined ? (
+          <span style={{ fontWeight: 600, color: "#f97316" }}>
+            {Number(pool.borrow_cap).toLocaleString()} XLM
+          </span>
+        ) : (
+          <span style={{ color: "rgba(255,255,255,0.35)", fontStyle: "italic", fontSize: "0.82rem" }}>
+            No cap
+          </span>
+        )}
+      </td>
       <td>
         <button
           onClick={handleToggle}
@@ -365,6 +403,7 @@ export default function AdminPoolsClient({ pools, pendingLoans }: AdminPoolsClie
                   <th>APR</th>
                   <th>Total Liquidity</th>
                   <th>Available</th>
+                  <th>Borrow Cap</th>
                   <th>Actions</th>
                 </tr>
               </thead>

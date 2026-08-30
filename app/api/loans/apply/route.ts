@@ -106,19 +106,25 @@ export async function POST(request: NextRequest) {
       else if (amount > 1000) aprBps = 1200;  // 12%
     }
 
-    // ── 4. Try to auto-assign a pool with enough liquidity ───────────────────
-    // This is optional — loan is still created without a pool (direct P2P path)
+    // ── 4. Try to auto-assign a pool with enough liquidity and headroom under cap ─
     const { data: availablePools } = await supabase
       .from("lending_pools")
-      .select("id, available_liquidity")
+      .select("id, available_liquidity, total_borrowed, borrow_cap")
       .eq("status", "active")
       .gte("available_liquidity", amount)
       .order("available_liquidity", { ascending: false })
-      .limit(1);
+      .limit(10); // fetch a few so we can apply cap filtering
 
-    const poolId = availablePools && availablePools.length > 0
-      ? availablePools[0].id
-      : null; // loan will be funded directly by a lender
+    const eligiblePool = (availablePools ?? []).find((p) => {
+      // If a borrow cap is set, ensure there is headroom (#153)
+      if (p.borrow_cap !== null && p.borrow_cap !== undefined) {
+        const currentBorrowed = Number(p.total_borrowed ?? 0);
+        return currentBorrowed + amount <= Number(p.borrow_cap);
+      }
+      return true; // no cap set — pool is eligible
+    });
+
+    const poolId = eligiblePool ? eligiblePool.id : null; // loan will be funded directly by a lender
 
     // ── 5. Create the loan ───────────────────────────────────────────────────
     const { data: loan, error: loanError } = await supabase

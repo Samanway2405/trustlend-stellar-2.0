@@ -53,6 +53,7 @@ const ROUTE_POLICIES: Record<string, RateLimitPolicy> = {
   "/api/treasury": { limit: 60, window: "1 m" },
   "/api/metrics": { limit: 60, window: "1 m" },
   "/api/admin/webhooks": { limit: 30, window: "1 m" },
+  "/api/admin/risk-parameters": { limit: 20, window: "1 m" },
 };
 
 /**
@@ -63,6 +64,8 @@ const ROUTE_PATTERN_POLICIES: Array<{ pattern: RegExp; policy: RateLimitPolicy }
   // PDF generation is expensive — keep it tight.
   { pattern: /^\/api\/loans\/[^/]+\/receipt$/, policy: { limit: 10, window: "10 m" } },
   { pattern: /^\/api\/admin\/webhooks\/[^/]+$/, policy: { limit: 30, window: "1 m" } },
+  // Pool borrow-cap management — sensitive admin action, keep conservative
+  { pattern: /^\/api\/admin\/pools\/[^/]+\/borrow-cap$/, policy: { limit: 10, window: "1 m" } },
 ];
 
 const localWindowStore = new Map<string, { count: number; reset: number }>();

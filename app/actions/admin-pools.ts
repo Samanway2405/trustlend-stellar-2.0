@@ -44,6 +44,14 @@ export async function createLendingPool(
     const name = String(formData.get("name") ?? "").trim();
     const aprBps = parseInt(String(formData.get("apr_bps") ?? "0"), 10);
     const description = String(formData.get("description") ?? "").trim();
+    const borrowCapRaw = formData.get("borrow_cap");
+    const borrowCap = borrowCapRaw !== null && borrowCapRaw !== "" 
+      ? parseFloat(String(borrowCapRaw))
+      : null;
+
+    if (borrowCap !== null && (borrowCap <= 0 || !Number.isFinite(borrowCap))) {
+      return { success: false, error: "Borrow cap must be a positive number" };
+    }
 
     if (!name) return { success: false, error: "Pool name is required" };
     if (!aprBps || aprBps <= 0 || aprBps > 10000)
@@ -56,6 +64,7 @@ export async function createLendingPool(
       apr_bps: aprBps,
       total_liquidity: 0,
       available_liquidity: 0,
+      borrow_cap: borrowCap ?? null,
     });
 
     if (error) return { success: false, error: error.message };
@@ -132,6 +141,17 @@ export async function approveLoan(
         success: false,
         error: `Insufficient pool liquidity: need ${loanAmount} XLM, pool has ${available} XLM`,
       };
+    }
+
+    // Borrow cap enforcement (#153)
+    if (pool.borrow_cap !== null && pool.borrow_cap !== undefined) {
+      const currentBorrowed = Number(pool.total_borrowed ?? 0);
+      if (currentBorrowed + loanAmount > pool.borrow_cap) {
+        return {
+          success: false,
+          error: `Pool borrow cap exceeded: pool has borrowed ${currentBorrowed} XLM, cap is ${pool.borrow_cap} XLM, loan needs ${loanAmount} XLM`,
+        };
+      }
     }
 
     const now = new Date().toISOString();
@@ -252,6 +272,16 @@ export async function runAutoMatch(): Promise<{
         continue;
       }
 
+      // Borrow cap enforcement (#153)
+      const targetPool = activePools.find((p) => String(p.id) === targetPoolId);
+      if (targetPool && targetPool.borrow_cap !== null && targetPool.borrow_cap !== undefined) {
+        const currentBorrowed = Number(targetPool.total_borrowed ?? 0);
+        if (currentBorrowed + amount > targetPool.borrow_cap) {
+          skipped++;
+          continue;
+        }
+      }
+
       // Approve and deduct
       const [loanResult, poolResult] = await Promise.all([
         supabase
@@ -290,6 +320,41 @@ export async function runAutoMatch(): Promise<{
       matched: 0,
       skipped: 0,
       error: err instanceof Error ? err.message : "Auto-match failed",
+    };
+  }
+}
+tanceof Error ? err.message : "Auto-match failed",
+    };
+  }
+}
+
+// ── Set pool borrow cap ──────────────────────────────────────────────────────
+/**
+ * Set or clear the borrow cap for a lending pool.
+ * Pass null to remove the cap (unlimited borrowing).
+ */
+export async function setPoolBorrowCap(
+  poolId: string,
+  borrowCap: number | null
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { supabase } = await requireAdmin();
+
+    if (borrowCap !== null && (borrowCap <= 0 || !Number.isFinite(borrowCap))) {
+      return { success: false, error: "Borrow cap must be a positive number or null" };
+    }
+
+    const { error } = await supabase
+      .from("lending_pools")
+      .update({ borrow_cap: borrowCap })
+      .eq("id", poolId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed",
     };
   }
 }

@@ -30,6 +30,7 @@ export interface Pool {
   total_liquidity: number;
   available_liquidity: number;
   total_borrowed: number;
+  borrow_cap: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +88,7 @@ export async function fetchPools(
   let query = supabase
     .from("lending_pools")
     .select(
-      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, created_at, updated_at",
+      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, borrow_cap, created_at, updated_at",
       { count: "estimated" }
     );
 
@@ -137,7 +138,7 @@ export async function fetchPoolById(
   const { data, error } = await supabase
     .from("lending_pools")
     .select(
-      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, created_at, updated_at"
+      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, borrow_cap, created_at, updated_at"
     )
     .eq("id", poolId)
     .maybeSingle();
@@ -172,7 +173,7 @@ export async function fetchActivePoolsWithLiquidity(
   let query = supabase
     .from("lending_pools")
     .select(
-      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, created_at, updated_at"
+      "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, borrow_cap, created_at, updated_at"
     )
     .eq("status", "active");
 
@@ -228,7 +229,7 @@ export async function fetchAdminDashboardPools(
     supabase
       .from("lending_pools")
       .select(
-        "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, created_at, updated_at"
+        "id, name, description, status, apr_bps, total_liquidity, available_liquidity, total_borrowed, borrow_cap, created_at, updated_at"
       )
       .order("created_at", { ascending: false }),
 
@@ -288,6 +289,7 @@ interface RawPool {
   total_liquidity?: unknown;
   available_liquidity?: unknown;
   total_borrowed?: unknown;
+  borrow_cap?: unknown;
   created_at?: unknown;
   updated_at?: unknown;
 }
@@ -306,6 +308,7 @@ function mapRawPoolToPool(raw: RawPool): Pool {
     total_liquidity: Number(raw.total_liquidity ?? 0),
     available_liquidity: Number(raw.available_liquidity ?? 0),
     total_borrowed: Number(raw.total_borrowed ?? 0),
+    borrow_cap: raw.borrow_cap !== null && raw.borrow_cap !== undefined ? Number(raw.borrow_cap) : null,
     created_at: String(raw.created_at ?? ""),
     updated_at: String(raw.updated_at ?? ""),
   };
